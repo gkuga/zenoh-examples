@@ -1,21 +1,21 @@
 # put-route-cost
 
-宣言を多く持つセッションほど、宣言されていないキーへの `put` が遅くなる問題の再現（zenoh 1.8.0）。
+A repro of `put`s to undeclared keys getting slower the more declarations a session has (zenoh 1.8.0).
 
-- セッション A と peer B を `tcp/127.0.0.1:17581` で繋ぐ（マルチキャスト scouting なし）。宣言は繋いだ後に行うので、[peer-join-stall](../peer-join-stall) の参加時の push は起きない。
-- D 個のキー `demo/thing/{i}/value` それぞれに、A と B が subscriber と queryable を 1 つずつ宣言する（キーあたり 4 宣言、具体的なキー）。D は 0, 1 000, 5 000, 10 000, 20 000 と増やしていく。
-- 各 D で、A が K = 10 000 個の別々の宣言されていないキー `demo/point/{j}/@state` に 1 回ずつ put し、1 回あたりの時間を測る。どの宣言にも一致しないので、データはどこにも送られない。測っているのは経路の計算だけ。
+- Session A and peer B connect over `tcp/127.0.0.1:17581` (no multicast scouting). Declarations are made after connecting, so the join-time push from [peer-join-stall](../peer-join-stall) does not occur.
+- For each of D keys `demo/thing/{i}/value`, A and B each declare one subscriber and one queryable (4 declarations per key, on concrete keys). D is increased through 0, 1 000, 5 000, 10 000, 20 000.
+- For each D, A puts once to each of K = 10 000 distinct undeclared keys `demo/point/{j}/@state` and measures the time per put. They match no declaration, so the data goes nowhere; only route computation is measured.
 
-宣言されていないキーにはリソースがないので経路がキャッシュされず、put のたびに `Resource::get_matches` で宣言済みの全リソースと交差を取る。仕組みは [docs/05](../docs/05-put-route-cost.md)、解決方法は [put-route-fix](../put-route-fix)。
+An undeclared key has no resource, so its route is not cached, and every put intersects with all declared resources in `Resource::get_matches`. See [docs/05](../docs/05-put-route-cost.md) for the mechanism and [put-route-fix](../put-route-fix) for the fix.
 
-## 実行
+## Run
 
 ```sh
 make run
 make run K=5000 D=0,2000,4000
 ```
 
-## 出力（2026-11-15, macOS, release）
+## Output (2026-11-15, macOS, release)
 
 ```
 K = 10000 puts to distinct undeclared keys, per D keys (4 declarations each)
@@ -28,5 +28,5 @@ K = 10000 puts to distinct undeclared keys, per D keys (4 declarations each)
 REPRODUCED: a put to an undeclared key took 0.35 us at D=0 and 813.87 us at D=20000 (2317x)
 ```
 
-put 1 回が D = 0 の 0.35 µs から D = 20 000 の 814 µs まで、ほぼ D に比例して（20 000 では比例以上に）伸びる。30 秒ごとに 10 000 キーへ put するなら、一巡に 8 秒かかる。
-同じ日の 1 回目の実行では D = 20 000 で 1 015 µs（このときは別のビルドが並行して走っていた）。
+A single put grows from 0.35 µs at D = 0 to 814 µs at D = 20 000, roughly in proportion to D (more than proportionally at 20 000). Putting to 10 000 keys every 30 seconds would take 8 seconds per sweep.
+The first run on the same day gave 1 015 µs at D = 20 000 (another build was running in parallel at the time).

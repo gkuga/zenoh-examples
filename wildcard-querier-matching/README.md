@@ -1,23 +1,23 @@
 # wildcard-querier-matching
 
-ワイルドカードの querier が、zenoh 1.9.0 以降 `matching_status()` で一致を報告しない問題の再現。
+A repro of wildcard queriers not reporting a match in `matching_status()` since zenoh 1.9.0.
 
-peer A が `r/fam/one/status` と `r/fam/two/status` に queryable を宣言し、peer B が具体的なキー 1 つとワイルドカード 3 つの querier を宣言する。それぞれについて `matching_status()`、`matching_listener` が 1 秒以内に発火したか、`get` の応答数を表示する。
-A と B は 1 プロセス内の 2 セッションで、127.0.0.1:17551 の TCP で繋ぎ、マルチキャスト scouting は切っている。
+Peer A declares queryables on `r/fam/one/status` and `r/fam/two/status`, and peer B declares queriers on one concrete key and three wildcards. For each, it prints `matching_status()`, whether `matching_listener` fired within 1 second, and the number of `get` replies.
+A and B are two sessions in one process, connected over TCP on 127.0.0.1:17551, with multicast scouting disabled.
 
-仕組みは [docs/03](../docs/03-wildcard-querier-matching.md)、解決方法は [wildcard-query-retry](../wildcard-query-retry)。
+See [docs/03](../docs/03-wildcard-querier-matching.md) for the mechanism and [wildcard-query-retry](../wildcard-query-retry) for the fix.
 
-## 実行
+## Run
 
 ```sh
 make run         # zenoh 1.10.2 (Cargo.toml)
-make run-1.8.0   # 同じ src/main.rs を zenoh 1.8.0 で (zenoh-1.8.0/Cargo.toml)
-make compare     # 両方
+make run-1.8.0   # the same src/main.rs with zenoh 1.8.0 (zenoh-1.8.0/Cargo.toml)
+make compare     # both
 ```
 
-Cargo は semver 互換な zenoh の 2 バージョンを 1 つのプロジェクトに入れられないので、バージョンの切り替えは feature ではなく 2 つ目のマニフェスト `zenoh-1.8.0/Cargo.toml` にしている（`[[bin]] path = "../src/main.rs"`）。
+Cargo cannot put two semver-compatible versions of zenoh into one project, so the version is switched not by a feature but by a second manifest, `zenoh-1.8.0/Cargo.toml` (`[[bin]] path = "../src/main.rs"`).
 
-## 出力（2026-11-15, macOS）
+## Output (2026-11-15, macOS)
 
 zenoh 1.10.2:
 
@@ -41,4 +41,4 @@ querier r/fam/one/*        matching_status=true  listener_event=Some(true)  get 
 OK: every querier that gets replies reports a match (v1.8.0-release)
 ```
 
-1.10.2 ではワイルドカードの 3 つが `matching_status=false` で listener も発火しないのに、`get` には 1.8.0 と同じ数の応答が返っている。
+In 1.10.2 the three wildcards report `matching_status=false` and the listener never fires, yet `get` returns the same number of replies as on 1.8.0.

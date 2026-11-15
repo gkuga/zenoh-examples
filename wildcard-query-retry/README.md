@@ -1,24 +1,24 @@
 # wildcard-query-retry
 
-[wildcard-querier-matching](../wildcard-querier-matching) の解決方法: ワイルドカードの `matching_status()` を問い合わせの条件にしない（zenoh 1.10.2）。
+The fix for [wildcard-querier-matching](../wildcard-querier-matching): don't make queries conditional on a wildcard's `matching_status()` (zenoh 1.10.2).
 
-peer A は B より 300 ms 遅れて queryable を宣言する（後から立ち上がるサービスのつもり）。B は `r/fam/*/status` のすべてが欲しい。
+Peer A declares its queryables 300 ms after B (standing in for a service that comes up later). B wants everything under `r/fam/*/status`.
 
-1. **retry**: タイムアウト 500 ms の `get` を出し、応答がなければ 200 ms 待って再試行する（最大 5 回）。matching は見ない。
-2. **concrete**: 具体的なキーごとの querier。こちらは `matching_status()` が正しい。
-3. **gated（やってはいけない書き方）**: ワイルドカードの querier が一致を報告するまで最大 2 秒待ってから問い合わせる。A がとっくに立ち上がった後に試しても、一致が来ないので何も問い合わせない。
+1. **retry**: issue a `get` with a 500 ms timeout; if there are no replies, wait 200 ms and retry (up to 5 times). Matching is not consulted.
+2. **concrete**: a querier per concrete key. For these, `matching_status()` is correct.
+3. **gated (the way not to do it)**: wait up to 2 seconds for the wildcard querier to report a match, then query. Even though A came up long before, no match is reported, so it never queries.
 
-127.0.0.1:17561 の TCP、マルチキャスト scouting なし。
+TCP on 127.0.0.1:17561, no multicast scouting.
 
-もう 1 つの解決方法は 1.8.0 に留まることで、1.8.0 では 3 の書き方でも動く（同じ `main.rs` を 1.8.0 でビルドして 2026-11-15 に確認: `3. gated on matching: 2 replies`、判定は `OK: all three got the replies; the gate works on this version (v1.8.0-release)`。このリポジトリには 1.8.0 用のマニフェストは置いていない）。ただし 1.8.0 には [peer-join-stall](../peer-join-stall) と [expr-id-exhaustion](../expr-id-exhaustion) の問題があり、閉じかけの transport への push を即失敗させる修正 ([#2709](https://github.com/eclipse-zenoh/zenoh/pull/2709)) も 1.10.2 にしか入っていない。詳しくは [docs/03](../docs/03-wildcard-querier-matching.md)。
+Another fix is to stay on 1.8.0, where even approach 3 works (checked on 2026-11-15 by building the same `main.rs` against 1.8.0: `3. gated on matching: 2 replies`, verdict `OK: all three got the replies; the gate works on this version (v1.8.0-release)`; this repository does not include a manifest for 1.8.0). However, 1.8.0 has the problems in [peer-join-stall](../peer-join-stall) and [expr-id-exhaustion](../expr-id-exhaustion), and the fix that makes pushes to a closing transport fail immediately ([#2709](https://github.com/eclipse-zenoh/zenoh/pull/2709)) is only in 1.10.2. See [docs/03](../docs/03-wildcard-querier-matching.md) for details.
 
-## 実行
+## Run
 
 ```sh
 make run
 ```
 
-## 出力（2026-11-15, macOS）
+## Output (2026-11-15, macOS)
 
 ```
 zenoh v1.10.2-release
@@ -31,4 +31,4 @@ zenoh v1.10.2-release
 OK: the gated query got nothing, but retrying the wildcard got 2 and concrete keys got 2 (v1.10.2-release)
 ```
 
-A がまだいない間の `get` は応答 0 ですぐ終わり（タイムアウトを待たない）、A が宣言した後の 3 回目で 2 つとも返っている。
+While A is not there yet, a `get` finishes immediately with 0 replies (it does not wait for the timeout), and on the 3rd attempt, after A has declared, both replies come back.

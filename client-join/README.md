@@ -1,23 +1,23 @@
 # client-join
 
-[peer-join-stall](../peer-join-stall) の解決方法: 参加する側を **client** にする（zenoh 1.8.0）。
+The fix for [peer-join-stall](../peer-join-stall): make the joining side a **client** (zenoh 1.8.0).
 
-プログラムは peer-join-stall と同じで、セッション B のモードが `"client"` なだけ（`JOIN_MODE`）。
+The program is the same as peer-join-stall, except that session B's mode is `"client"` (`JOIN_MODE`).
 
-- A は固定のエンドポイント `tcp/127.0.0.1:17511` で listen する
-- B は `mode: "client"`、`connect/endpoints: ["tcp/127.0.0.1:17511"]`
-- どちらも `scouting/multicast/enabled: false`
+- A listens on the fixed endpoint `tcp/127.0.0.1:17511`
+- B uses `mode: "client"` and `connect/endpoints: ["tcp/127.0.0.1:17511"]`
+- Both use `scouting/multicast/enabled: false`
 
-client は自分が送った interest に合う宣言しか受け取らないので、参加しても A は宣言を送らない。B は数 ms で応答を得て、A の `put` も止まらない。仕組みは [docs/01](../docs/01-peer-join-declarations.md)。
+A client only receives declarations matching the interests it sent, so A sends no declarations when it joins. B gets a reply within a few ms and A's `put` does not stall. See [docs/01](../docs/01-peer-join-declarations.md) for the mechanism.
 
-## 実行
+## Run
 
 ```sh
 make run            # N = 40000
 make run N=20000
 ```
 
-## 出力（2026-11-15, macOS, release）
+## Output (2026-11-15, macOS, release)
 
 ```
 [A] READY 40000 queryables declared in 22.18s
@@ -26,5 +26,5 @@ make run N=20000
 OK: client B got its first reply after 7.51ms with N=40000; A's put blocked for up to 0 s; A closed the link 0 time(s)
 ```
 
-同じ N=40000 で peer として参加すると、30 秒待っても応答がない（[peer-join-stall](../peer-join-stall)）。
-N を変えてもほとんど変わらず、同じ日の別の実行では 10 000 と 20 000 でどちらも 3 ms、40 000 で 5 ms だった。
+Joining as a peer with the same N=40000 gets no reply even after 30 seconds ([peer-join-stall](../peer-join-stall)).
+Changing N makes little difference: in another run on the same day it was 3 ms for both 10 000 and 20 000, and 5 ms for 40 000.

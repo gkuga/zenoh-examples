@@ -1,28 +1,28 @@
 # expr-id-exhaustion-fork
 
-[expr-id-exhaustion](../expr-id-exhaustion) を fork の修正で動かす（zenoh 1.8.0 + patch）。
+Runs [expr-id-exhaustion](../expr-id-exhaustion) with the fix from a fork (zenoh 1.8.0 + patch).
 
-プログラムは expr-id-exhaustion と同じ（ポートだけ `17542`）。違いは Cargo.toml の次の行だけ:
+The program is the same as expr-id-exhaustion (only the port is `17542`). The only difference is these lines in Cargo.toml:
 
 ```toml
 [patch.crates-io]
 zenoh = { git = "https://github.com/gkuga/zenoh", rev = "25c6174e6477c355c4db6fd09e2044523fb73b37" }
 ```
 
-修正は commit `25c6174e6477c355c4db6fd09e2044523fb73b37` で、1.8.0 に次の 2 つを足したもの:
+The fix is commit `25c6174e6477c355c4db6fd09e2044523fb73b37`, which is 1.8.0 plus these two changes:
 
-- ExprId をラップするカーソルで割り当てる（償却 O(1)。undeclare で解放された番号を優先して再利用）
-- 全部使用中なら番号を振らずに完全なキー式を送り、face ごとに 1 回だけ警告する（`No expression id left, sending ... and later key expressions in full`）
+- ExprIds are allocated by a wrapping cursor (amortized O(1); numbers freed by undeclare are reused first)
+- When every number is in use, the full key expression is sent without a number, with a warning logged once per face (`No expression id left, sending ... and later key expressions in full`)
 
-zenoh はリポジトリ内の他の `zenoh-*` に path で依存しているので、`Cargo.lock` の `zenoh-*` はすべてこの commit から来る。初回のビルドで GitHub から clone する。詳しくは [docs/02](../docs/02-expr-id-exhaustion.md)。
+zenoh depends on the other `zenoh-*` crates in its repository by path, so every `zenoh-*` in `Cargo.lock` comes from this commit. The first build clones it from GitHub. See [docs/02](../docs/02-expr-id-exhaustion.md) for details.
 
-## 実行
+## Run
 
 ```sh
-make run              # N = 70000、release
+make run              # N = 70000, release
 ```
 
-## 出力（2026-11-15, macOS, release）
+## Output (2026-11-15, macOS, release)
 
 ```
 [B] connected as peer via tcp/127.0.0.1:17542
@@ -46,13 +46,13 @@ make run              # N = 70000、release
 OK: A declared all 70000 tokens and B sees demo/token/69999 (2.2s after DONE) (after 132.8s)
 ```
 
-65 536 個目（`demo/token/65535`）で番号が尽きて警告が 1 回出て、残りは完全なキーで送られる。70 000 個すべての宣言が返り、B は最後のトークンを見られる。
+At the 65 536th token (`demo/token/65535`) the numbers run out, the warning is logged once, and the rest are sent with full keys. All 70 000 declarations return, and B can see the last token.
 
-### 同じ日の他の実行
+### Other runs on the same day
 
-この最終版の前に 3 回実行し、2 回は `FAILED` だった。どちらも修正そのものの失敗ではないと考えているが、記録しておく。
+Before this final version there were 3 runs, 2 of which were `FAILED`. I don't believe either was a failure of the fix itself, but they are recorded here.
 
-1. `OK`。このときは B の確認が 1 回だけ（タイムアウト 5 s）だった。
-2. `FAILED: ... B does not see demo/token/69999`。確認が 1 回 5 s だけで、B がまだ 70 000 個の宣言を取り込み中だったとみられる。次の実行では B が見られたのは DONE の 8.1 s 後だった。そのため確認を「60 s まで 1 s おきに再試行」に変えた。
-3. `OK`（DONE の 8.1 s 後）。
-4. `FAILED: ... within 60 s`。ログの時刻が 15 分飛んでおり、実行中に Mac がスリープした。復帰後にリンクが切れ（`Closing transport!`）、B が繋ぎ直すと 70 000 個を持つ A への peer の参加になり、[peer-join-stall](../peer-join-stall) と同じく 5 秒ごとにリンクが閉じ続けた。上の出力はスリープを防いで（`caffeinate -i`）実行し直したもの。
+1. `OK`. At this point B checked only once (5 s timeout).
+2. `FAILED: ... B does not see demo/token/69999`. There was only one 5 s check, and B was apparently still ingesting the 70 000 declarations. In the next run B saw it 8.1 s after DONE, so the check was changed to "retry every 1 s for up to 60 s".
+3. `OK` (8.1 s after DONE).
+4. `FAILED: ... within 60 s`. The log timestamps jumped by 15 minutes: the Mac went to sleep during the run. After waking, the link dropped (`Closing transport!`), and B's reconnect became a peer joining an A with 70 000 declarations, so the link kept being closed every 5 seconds just like [peer-join-stall](../peer-join-stall). The output above is a rerun with sleep prevented (`caffeinate -i`).
