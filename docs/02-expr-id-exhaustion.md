@@ -1,14 +1,14 @@
-# ExprId の枯渇
+# ExprId exhaustion
 
-サンプル: [expr-id-exhaustion](../expr-id-exhaustion)（再現）、[expr-id-exhaustion-fork](../expr-id-exhaustion-fork)（fork の修正）
+Samples: [expr-id-exhaustion](../expr-id-exhaustion) (repro), [expr-id-exhaustion-fork](../expr-id-exhaustion-fork) (fix in a fork)
 
-## ExprId とは
+## What an ExprId is
 
-Zenoh はキー式を毎回文字列で送らず、リンク（face）ごとに番号を振って `DeclareKeyExpr` で相手に教え、以後は番号で送る。
-この番号が `ExprId` で、`zenoh-protocol/src/core/wire_expr.rs` の `pub type ExprId = u16;`。0 は「接頭辞なし」に予約されているので、1 本のリンクで使えるのは 1〜65 535。
-番号が解放されるのは相手が undeclare したときと face が閉じたときだけ（[#2825](https://github.com/eclipse-zenoh/zenoh/issues/2825)）。
+Instead of sending a key expression as a string every time, Zenoh assigns it a number per link (face), tells the other side with `DeclareKeyExpr`, and from then on sends the number.
+That number is the `ExprId`: `pub type ExprId = u16;` in `zenoh-protocol/src/core/wire_expr.rs`. 0 is reserved for "no prefix", so one link can use 1 to 65 535.
+A number is only freed when the other side undeclares it or when the face closes ([#2825](https://github.com/eclipse-zenoh/zenoh/issues/2825)).
 
-## 1.8.0 の割り当て
+## Allocation in 1.8.0
 
 `zenoh/src/net/routing/dispatcher/face.rs`:
 
@@ -22,42 +22,42 @@ pub(crate) fn get_next_local_id(&self) -> ExprId {
 }
 ```
 
-- 毎回 1 から探すので、k 個使用中なら k 回調べる。N 個送ると O(N²)。これがルーティングテーブルの書き込みロックの中で走る（`Resource::decl_key` から呼ばれる）。
-- 65 535 個すべて使用中のとき:
-  - debug ビルドは `id += 1` のオーバーフローで panic する。
-  - release ビルドは 0 に折り返す。0 はマップに入っていないので、65 536 個目には予約済みの 0 が振られてしまう。
-  - 65 537 個目では 0 も使用中なので、ループが終わらない。書き込みロックを持ったままなので、そのセッションの宣言も `put` もすべて止まる。
+- It searches from 1 every time, so with k ids in use it checks k times, and sending N declarations is O(N²). This runs inside the routing table's write lock (it is called from `Resource::decl_key`).
+- When all 65 535 are in use:
+  - A debug build panics on the overflow of `id += 1`.
+  - A release build wraps around to 0. 0 is not in the maps, so the 65 536th declaration is given the reserved 0.
+  - For the 65 537th, 0 is in use too, so the loop never ends. Since it holds the write lock, every declaration and `put` of that session stalls.
 
-expr-id-exhaustion はちょうど **65 537 個目の宣言**で止まることを確かめている。
+expr-id-exhaustion checks that it stalls exactly at the **65 537th declaration**.
 
-## queryable ではなく liveliness token を使う理由
+## Why liveliness tokens instead of queryables
 
-1.8.0 の `declare_queryable` と `declare_subscriber` は、キーの非ワイルドカード部分を **セッション自身の** u16 カウンタ（`Session` の `expr_id_counter`、`// @TODO: manage rollover and uniqueness`）で先に宣言する（`declare_nonwild_prefix` → `declare_prefix`）。
-このカウンタは単純な `fetch_add` なので 65 536 個目で折り返し、ルータ側が `Resource 1 remapped. Remapping unsupported!` を出して以後の宣言を既存のリソースに重ねてしまう。face 側の新しい番号は要らなくなるので、face の枯渇には届かない。
+In 1.8.0, `declare_queryable` and `declare_subscriber` first declare the non-wildcard part of the key with the **session's own** u16 counter (`expr_id_counter` in `Session`, `// @TODO: manage rollover and uniqueness`) (`declare_nonwild_prefix` → `declare_prefix`).
+That counter is a plain `fetch_add`, so it wraps at the 65 536th declaration, the router logs `Resource 1 remapped. Remapping unsupported!`, and later declarations are mapped onto existing resources. They no longer need new numbers on the face, so the face never gets exhausted.
 
-実際に 1 つのセッションで queryable を 70 000 個宣言すると（2026-11-15, release）:
+Declaring 70 000 queryables from one session (2026-11-15, release):
 
-- 宣言は 108 s ですべて返った（止まらない）
-- `Remapping unsupported!` が 4 464 回（= 70 000 − 65 536）出た
-- B から最後の `demo/decl/69999` に `get` しても応答がなかった
+- All declarations returned in 108 s (no hang)
+- `Remapping unsupported!` was logged 4 464 times (= 70 000 − 65 536)
+- A `get` from B for the last key `demo/decl/69999` got no reply
 
-つまり 1 セッションから queryable を 65 536 個以上宣言すると、固まりはしないが黙って壊れる。
-face の枯渇は、複数のセッション（たとえばルータや peer に繋がった複数の client）からの宣言が 1 本のリンクに集まると起きる。liveliness token は接頭辞を宣言せず完全なキーで送られるので（`declare_liveliness_inner`）、1 セッションでもそれを再現できる。
+So declaring 65 536 or more queryables from one session does not hang, but silently breaks.
+Face exhaustion happens when declarations from several sessions (for example several clients connected to a router or a peer) are funneled into one link. Liveliness tokens do not declare a prefix and are sent with the full key (`declare_liveliness_inner`), so they reproduce it from a single session.
 
-## fork の修正
+## The fork's fix
 
-[gkuga/zenoh@25c6174](https://github.com/gkuga/zenoh/commit/25c6174e6477c355c4db6fd09e2044523fb73b37)（タグ `nue-1.8.0-expr-id-2`）は 1.8.0 に 2 つのコミットを足したもの:
+[gkuga/zenoh@25c6174](https://github.com/gkuga/zenoh/commit/25c6174e6477c355c4db6fd09e2044523fb73b37) (tag `nue-1.8.0-expr-id-2`) is 1.8.0 plus two commits:
 
-- **ラップするカーソル。** 0 を飛ばすカーソルから番号を出し、相手の undeclare で解放された番号の集合を優先して再利用する。候補は今までどおり両方のマップと照合する。償却 O(1)。
-- **枯渇の扱い。** 全部使用中なら `decl_key` は番号を振らずに完全なキー式を送る。face は使い切ったことを覚えておき、以後は探し直さない。警告は face ごとに 1 回（`No expression id left, sending ... and later key expressions in full`）。相手の undeclare でフラグを戻す。
+- **A wrapping cursor.** Numbers come from a cursor that skips 0, and numbers freed by the other side's undeclare are reused first. Candidates are still checked against both maps. Amortized O(1).
+- **Handling exhaustion.** When every number is in use, `decl_key` sends the full key expression without assigning a number. The face remembers that it is exhausted and does not search again. The warning is logged once per face (`No expression id left, sending ... and later key expressions in full`). An undeclare from the other side clears the flag.
 
-wire は変わらない（`ExprId` は u16 のまま）。使い方は Cargo.toml に次を足すだけ:
+The wire format does not change (`ExprId` stays u16). To use it, add this to Cargo.toml:
 
 ```toml
 [patch.crates-io]
 zenoh = { git = "https://github.com/gkuga/zenoh", tag = "nue-1.8.0-expr-id-2" }
 ```
 
-zenoh はリポジトリ内の他の `zenoh-*` クレートに path で依存しているので、`Cargo.lock` の `zenoh-*` はすべてこの commit のものになる。
+zenoh depends on the other `zenoh-*` crates in its repository by path, so every `zenoh-*` in `Cargo.lock` comes from this commit.
 
-この修正は枯渇でノードが固まらないようにするもので、[01](01-peer-join-declarations.md) のロックを持ったままの push は残る。fork 側の計測（制御キュー 16）では、peer が N 個の宣言を持つセッションに参加して最初の応答を得るまで、10k で 4.55 s → 3.17 s、20k で 33.1 s → 26.2 s だった。
+This fix keeps a node from hanging on exhaustion; the push under the lock from [01](01-peer-join-declarations.md) remains. Measured on the fork side (control queue 16), the time for a peer joining a session with N declarations to get its first reply went from 4.55 s to 3.17 s at 10k and from 33.1 s to 26.2 s at 20k.

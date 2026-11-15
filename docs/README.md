@@ -1,21 +1,21 @@
-# Zenoh の調査メモ
+# Zenoh investigation notes
 
-このリポジトリのサンプルで再現した問題の仕組みのまとめ。
-ソースの位置は crates.io から取得した各バージョンのもの（`~/.cargo/registry/src/*/zenoh-1.8.0/` など）で、GitHub では <https://github.com/eclipse-zenoh/zenoh/tree/1.8.0> にあたる。
+How the problems reproduced by the samples in this repository work.
+Source locations refer to each version as fetched from crates.io (for example `~/.cargo/registry/src/*/zenoh-1.8.0/`), which corresponds to <https://github.com/eclipse-zenoh/zenoh/tree/1.8.0> on GitHub.
 
-## 目次
+## Contents
 
-1. [peer の参加と宣言の全量 push](01-peer-join-declarations.md) — peer-join-stall / client-join。p2p では参加した peer に全宣言を書き込みロックを持ったまま送る。client は interest に合う宣言しか受け取らない
-2. [ExprId の枯渇](02-expr-id-exhaustion.md) — expr-id-exhaustion / expr-id-exhaustion-fork。`get_next_local_id` の線形探索、u16 の上限、セッション側カウンタの折り返し、fork の修正
-3. [ワイルドカード querier の matching](03-wildcard-querier-matching.md) — wildcard-querier-matching / wildcard-query-retry。1.9.0 以降 `remote_queryable_matching_status` が包含を要求する
-4. [client と scouting / connect](04-client-scouting.md) — client-scouting。`scouting/multicast/autoconnect` と `connect/timeout_ms` の client 既定値
-5. [宣言されていないキーへの put のコスト](05-put-route-cost.md) — put-route-cost / put-route-fix。リソースのないキーは経路がキャッシュされず `Resource::get_matches` が毎回走る
+1. [Peer join and the full push of declarations](01-peer-join-declarations.md) — peer-join-stall / client-join. In p2p, all declarations are sent to a joining peer while holding the write lock. A client only receives declarations matching its interests
+2. [ExprId exhaustion](02-expr-id-exhaustion.md) — expr-id-exhaustion / expr-id-exhaustion-fork. Linear search in `get_next_local_id`, the u16 limit, the wraparound of the session-side counter, and the fork's fix
+3. [Wildcard querier matching](03-wildcard-querier-matching.md) — wildcard-querier-matching / wildcard-query-retry. Since 1.9.0, `remote_queryable_matching_status` requires inclusion
+4. [Client, scouting and connect](04-client-scouting.md) — client-scouting. The client defaults of `scouting/multicast/autoconnect` and `connect/timeout_ms`
+5. [Cost of a put to an undeclared key](05-put-route-cost.md) — put-route-cost / put-route-fix. A key without a resource has no cached route, so `Resource::get_matches` runs on every put
 
-## 関連する upstream の issue / PR（2026-11-14 時点）
+## Related upstream issues / PRs (as of 2026-11-14)
 
-| 番号 | 内容 | 状態 |
+| Number | Summary | State |
 | --- | --- | --- |
-| [eclipse-zenoh/zenoh#2825](https://github.com/eclipse-zenoh/zenoh/issues/2825) | face の u16 ExprId を使い切るとルータが固まる | open |
-| [eclipse-zenoh/zenoh#2835](https://github.com/eclipse-zenoh/zenoh/pull/2835) | ExprId の回収、枯渇時に回り続けない | open |
-| [eclipse-zenoh/zenoh#2709](https://github.com/eclipse-zenoh/zenoh/pull/2709) | 応答しないとして閉じている transport への push を即失敗させる | merged, 1.10.2 に含まれる |
-| [logivations/zenoh#8](https://github.com/logivations/zenoh/pull/8) | 別の fork。同じ固まり方を報告し、`decl_key` の送信を非ブロッキングにした | — |
+| [eclipse-zenoh/zenoh#2825](https://github.com/eclipse-zenoh/zenoh/issues/2825) | The router hangs when a face runs out of u16 ExprIds | open |
+| [eclipse-zenoh/zenoh#2835](https://github.com/eclipse-zenoh/zenoh/pull/2835) | Reclaim ExprIds and stop spinning on exhaustion | open |
+| [eclipse-zenoh/zenoh#2709](https://github.com/eclipse-zenoh/zenoh/pull/2709) | Fail pushes to a transport being closed as unresponsive immediately | merged, included in 1.10.2 |
+| [logivations/zenoh#8](https://github.com/logivations/zenoh/pull/8) | Another fork. Reports the same hang and makes sending in `decl_key` non-blocking | — |

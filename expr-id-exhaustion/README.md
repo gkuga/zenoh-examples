@@ -1,25 +1,25 @@
 # expr-id-exhaustion
 
-1 本のリンクで u16 の ExprId を使い切ると、セッションの宣言が二度と返らなくなる問題の再現（zenoh 1.8.0、release ビルド）。
+A repro of a session's declarations never returning once the u16 ExprIds of one link are used up (zenoh 1.8.0, release build).
 
-- peer B（親プロセス）が先にセッション A（子プロセス）に `tcp/127.0.0.1:17541` で繋ぐ（マルチキャスト scouting なし）。
-- その後 A が N = 70 000 個の liveliness token を別々のキー `demo/token/{i}` に宣言する。宣言のたびに B 向けの face で ExprId が 1 つ使われる。
-- A の別スレッドの見張りが、10 s 以上返らない宣言を報告する。30 s 返らなければ親が `REPRODUCED` を出し、子を kill して終わる（全体の上限は 600 s）。
-- 全部返った場合は、B が最後のトークン `demo/token/69999` を liveliness の `get` で見られるかを確かめる（fork 版で使う）。
+- Peer B (the parent process) first connects to session A (a child process) on `tcp/127.0.0.1:17541` (no multicast scouting).
+- A then declares N = 70 000 liveliness tokens on distinct keys `demo/token/{i}`. Each declaration uses one ExprId on the face towards B.
+- A watchdog thread in A reports any declaration that has not returned for 10 s or more. If one has not returned for 30 s, the parent prints `REPRODUCED`, kills the child and exits (overall limit 600 s).
+- If all declarations return, it checks whether B can see the last token `demo/token/69999` with a liveliness `get` (used by the fork version).
 
-参加の後で宣言するので、[peer-join-stall](../peer-join-stall) の参加時の全量 push は起きない。宣言が 1 つずつ B に送られる。
+Declarations happen after the join, so the full push at join time from [peer-join-stall](../peer-join-stall) does not occur. Declarations are sent to B one by one.
 
-queryable ではなく token を使う理由（queryable だとセッション側のカウンタが先に折り返し、固まらずに黙って壊れる）と仕組みは [docs/02](../docs/02-expr-id-exhaustion.md)、修正は [expr-id-exhaustion-fork](../expr-id-exhaustion-fork)。
+See [docs/02](../docs/02-expr-id-exhaustion.md) for the mechanism and for why tokens are used instead of queryables (with queryables the session-side counter wraps first, and things silently break instead of hanging). The fix is in [expr-id-exhaustion-fork](../expr-id-exhaustion-fork).
 
-## 実行
+## Run
 
 ```sh
-make run              # N = 70000、release
+make run              # N = 70000, release
 ```
 
-debug ビルド（`cargo run -- 70000`）だと、止まる代わりに `get_next_local_id` の `id += 1` のオーバーフローで panic するはず（ここでは試していない）。
+A debug build (`cargo run -- 70000`) should panic on the overflow of `id += 1` in `get_next_local_id` instead of hanging (not tried here).
 
-## 出力（2026-11-15, macOS, release）
+## Output (2026-11-15, macOS, release)
 
 ```
 [B] connected as peer via tcp/127.0.0.1:17541
@@ -43,6 +43,6 @@ debug ビルド（`cargo run -- 70000`）だと、止まる代わりに `get_nex
 REPRODUCED: A hung at declaration #65537 of 70000; it has not returned for 30s (65 535 ExprIds) (after 108.8s)
 ```
 
-65 535 個の番号を使い切った後、65 536 個目には予約済みの 0 が振られ（release では `id += 1` が 0 に折り返す）、**65 537 個目**で `get_next_local_id` のループが終わらなくなる。そのままルーティングテーブルの書き込みロックを持ち続けるので、A はもう何もできない。
-同じ日に 3 回実行し、3 回とも #65537 で止まった（100〜317 s。遅い回は別のビルドが並行していた）。
-宣言 1 個あたりの時間は N とともに伸びる（線形探索なので O(N²)）。
+After all 65 535 numbers are used, the 65 536th declaration is given the reserved 0 (in release, `id += 1` wraps to 0), and at the **65 537th** the loop in `get_next_local_id` never ends. It keeps holding the routing table's write lock, so A can no longer do anything.
+It was run 3 times on the same day and stalled at #65537 every time (100–317 s; the slow runs had another build running in parallel).
+The time per declaration grows with N (linear search, so O(N²)).

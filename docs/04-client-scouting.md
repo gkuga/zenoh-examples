@@ -1,41 +1,43 @@
-# client と scouting / connect
+# Client, scouting and connect
 
-サンプル: [client-scouting](../client-scouting)（再現と解決を 1 つで）
+Sample: [client-scouting](../client-scouting) (repro and fix in one)
 
-client モードのセッションは、peer とは既定値がいくつか違う。peer から client に切り替えるとき（[01](01-peer-join-declarations.md)）にハマる 2 点。
+A client-mode session has several defaults that differ from a peer's. These are two pitfalls when switching from peer to client ([01](01-peer-join-declarations.md)).
 
-## 1. scouting で見つけた peer に繋がらない
+## 1. It does not connect to a peer found by scouting
 
-`scouting/multicast/autoconnect` の既定値（`zenoh-config/src/defaults.rs`）:
+Defaults of `scouting/multicast/autoconnect` (`zenoh-config/src/defaults.rs`):
 
-| モード | 既定値 | 意味 |
+| Mode | Default | Meaning |
 | --- | --- | --- |
-| router | `""` | 自動では繋がない |
-| peer | `"router\|peer"` | router にも peer にも繋ぐ |
-| client | `"router"` | **router にしか繋がない** |
+| router | `""` | Does not connect automatically |
+| peer | `"router\|peer"` | Connects to routers and peers |
+| client | `"router"` | **Connects to routers only** |
 
-client はマルチキャストの scouting で peer を見つけても繋がず、`scouting/timeout`（3 秒）で `zenoh::open` が失敗する。peer にも繋ぐには:
+Even when a client finds a peer by multicast scouting, it does not connect, and `zenoh::open` fails after `scouting/timeout` (3 seconds). To also connect to peers:
 
 ```json5
 scouting: { multicast: { autoconnect: { client: ["router", "peer"] } } }
 ```
 
-計測（2026-11-15）: 既定値では 3.00 s で失敗、上の設定では 3.3 ms で open し、応答も返った（別の機会の計測では 12 ms）。
+Measured (2026-11-15): with the default it fails after 3.00 s; with the setting above it opens in 3.3 ms and gets a reply (12 ms in another run).
 
-## 2. まだ listen していない相手に即失敗する
+## 2. It fails immediately against an endpoint that is not listening yet
 
-`connect/timeout_ms` の既定値は router と peer が `-1`（繋がるまで試し続ける）、client が **`0`**（1 回試して失敗したら `zenoh::open` がエラー）。`connect/exit_on_failure` も client だけ `true`。
-相手より先に client を起動すると、`Unable to connect to any of [tcp/127.0.0.1:...]!` で即座に失敗する。
+`connect/timeout_ms` defaults to `-1` for routers and peers (keep trying until connected) and to **`0`** for clients (try once; if it fails, `zenoh::open` returns an error). `connect/exit_on_failure` is also `true` only for clients.
+If the client starts before the other side, it fails immediately with `Unable to connect to any of [tcp/127.0.0.1:...]!`.
+
+With
 
 ```json5
 connect: { endpoints: ["tcp/127.0.0.1:17572"], timeout_ms: -1 }
 ```
 
-にすると、相手が listen するまで open が待つ。
+open waits until the other side is listening.
 
-計測（2026-11-15）: 1 s 後に listen する相手に対し、既定値では 0.4 ms で失敗、`-1` では 1.01 s で open した（再試行は `connect/retry` の既定で 1 s から 2 倍ずつ、最大 4 s なので、1 s 目に間に合わないと 3 s になる）。
+Measured (2026-11-15): against an endpoint that starts listening after 1 s, the default fails in 0.4 ms and `-1` opens in 1.01 s (retries follow the `connect/retry` default: start at 1 s, double each time, up to 4 s, so if the 1 s retry is too early it takes 3 s).
 
-## マルチキャストを手元に閉じる
+## Keeping multicast local
 
-client-scouting は既定のグループ `224.0.0.224:7446` ではなく `224.0.0.224:17571` を使い、peer は 127.0.0.1 でだけ listen する。TTL は既定の 1 なのでルータは越えない。
-macOS で `scouting/multicast/interface` を `"lo0"` にすると scouting が成立しなかった（client が peer を見つけられない）ので、インタフェースは既定の `"auto"` のまま。scouting のパケット自体は LAN に出るが、そのポートを聞いているのはこのサンプルだけ。
+client-scouting uses `224.0.0.224:17571` instead of the default group `224.0.0.224:7446`, and the peer only listens on 127.0.0.1. The TTL is the default 1, so packets do not cross routers.
+On macOS, setting `scouting/multicast/interface` to `"lo0"` broke scouting (the client could not find the peer), so the interface stays at the default `"auto"`. The scouting packets themselves do go out on the LAN, but only this sample listens on that port.

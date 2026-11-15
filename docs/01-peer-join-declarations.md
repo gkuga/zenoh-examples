@@ -1,52 +1,52 @@
-# peer の参加と宣言の全量 push
+# Peer join and the full push of declarations
 
-サンプル: [peer-join-stall](../peer-join-stall)（再現）、[client-join](../client-join)（解決）
+Samples: [peer-join-stall](../peer-join-stall) (repro), [client-join](../client-join) (fix)
 
-## 何が起きるか
+## What happens
 
-queryable などの宣言をたくさん持つセッション A に、別のセッション B が **peer** として TCP で参加すると:
+When another session B joins, as a **peer** over TCP, a session A that holds many declarations such as queryables:
 
-- B の最初の `get` に応答が返らない（N が大きいと何秒待っても返らない）
-- A 自身の `put` が止まる
-- 5 秒後に A がリンクを閉じ（`Unable to push non droppable network message to ... Closing transport!`）、B が繋ぎ直すと同じことを繰り返す
+- B's first `get` gets no reply (with a large N, no reply arrives no matter how long it waits)
+- A's own `put` stalls
+- After 5 seconds A closes the link (`Unable to push non droppable network message to ... Closing transport!`), B reconnects, and the same thing repeats
 
-同じ A に **client** として参加すると、4 万 queryable でも数 ms で応答する。
+When B joins the same A as a **client**, it gets a reply in a few ms even with 40k queryables.
 
-## 仕組み（zenoh 1.8.0）
+## Mechanism (zenoh 1.8.0)
 
-1. **p2p では参加した peer に全宣言を送る。** `zenoh/src/net/routing/hat/p2p_peer/mod.rs` には "at connection … peers act as if they received an interest CurrentFuture with id 0" とあり、`queries_new_face` などが既存の queryable をすべて新しい face に送る。
-2. **その送信はルーティングテーブルの書き込みロックを持ったまま行われる。** 宣言の送信は `Resource::decl_key` が `DeclareKeyExpr` を出し、宣言は `CongestionControl::Block` なので、制御用キュー（`transport/link/tx/queue/size/control`、既定 2 バッチ）が空くまでブロックする。
-3. **新しいリンクの受信ループは参加処理が終わるまで始まらない。** `zenoh-transport/src/unicast/manager.rs` に "the read loop … remains blocked until new_unicast() returns" とある。キューが詰まると、参加処理が終わらないまま待ち続ける。
-4. **ローカルの `put` も同じロックを待つ。** `route_data` がテーブルの読み込みロックを取るので、参加処理の間は A の `put` が返らない。
-5. **キューへの push が `wait_before_close`（5 秒）以上詰まると transport を閉じる**（`zenoh-transport/src/unicast/universal/tx.rs` の `handle_push_result`）。B は `connect/endpoints` に従って繋ぎ直し、また最初からになる。
-6. さらに、ExprId の割り当て `FaceState::get_next_local_id` は 1 から線形に探すので、N 個の宣言を送ると O(N²) になる（[02](02-expr-id-exhaustion.md)）。
+1. **In p2p, all declarations are sent to a joining peer.** `zenoh/src/net/routing/hat/p2p_peer/mod.rs` says "at connection … peers act as if they received an interest CurrentFuture with id 0", and `queries_new_face` and friends send every existing queryable to the new face.
+2. **This is done while holding the routing table's write lock.** For each declaration, `Resource::decl_key` emits a `DeclareKeyExpr`, and declarations use `CongestionControl::Block`, so sending blocks until the control queue (`transport/link/tx/queue/size/control`, 2 batches by default) has room.
+3. **The new link's read loop does not start until the join has finished.** `zenoh-transport/src/unicast/manager.rs` says "the read loop … remains blocked until new_unicast() returns". Once the queue is full, the join keeps waiting and never finishes.
+4. **Local `put`s wait on the same lock.** `route_data` takes the table's read lock, so A's `put` does not return while the join is in progress.
+5. **If pushing to the queue stays blocked for longer than `wait_before_close` (5 seconds), the transport is closed** (`handle_push_result` in `zenoh-transport/src/unicast/universal/tx.rs`). B reconnects according to `connect/endpoints`, and everything starts over.
+6. On top of that, ExprId allocation in `FaceState::get_next_local_id` searches linearly from 1, so sending N declarations is O(N²) ([02](02-expr-id-exhaustion.md)).
 
-`transport/link/tx/queue/size/control`（最大 16）や `wait_before_close` を大きくすると詰まり始める N は動くが、曲線そのものは変わらない。
+Increasing `transport/link/tx/queue/size/control` (max 16) or `wait_before_close` shifts the N at which things start to stall, but does not change the shape of the curve.
 
-## client だと速い理由
+## Why a client is fast
 
-zenoh 1.0 から client と peer の subsystem には宣言を流さなくなり、client は自分が送った interest に合う宣言だけを受け取る（[zenoh 1.0 のリリース記事](https://zenoh.io/blog/2024-10-21-zenoh-firesong/): "subscribers, queryables and liveliness tokens declarations are not propagated any more to clients and peers subsystems"）。
-client-join の B は宣言も interest も持たずに `get` するだけなので、参加時に A から送られる宣言はない。
+Since zenoh 1.0, declarations are no longer propagated to client and peer subsystems, and a client only receives declarations that match the interests it sent ([zenoh 1.0 release post](https://zenoh.io/blog/2024-10-21-zenoh-firesong/): "subscribers, queryables and liveliness tokens declarations are not propagated any more to clients and peers subsystems").
+B in client-join has no declarations or interests and only does a `get`, so A sends no declarations when it joins.
 
-client にするには:
+To use a client:
 
-- A は固定のエンドポイントで listen する（`listen/endpoints: ["tcp/127.0.0.1:17511"]`）
-- B は `mode: "client"` で、`connect/endpoints` に A を書く
-- `scouting/multicast/enabled: false`（client は既定では scouting で見つけた peer に繋がらない。[04](04-client-scouting.md)）
+- A listens on a fixed endpoint (`listen/endpoints: ["tcp/127.0.0.1:17511"]`)
+- B uses `mode: "client"` and lists A in `connect/endpoints`
+- `scouting/multicast/enabled: false` (by default a client does not connect to peers found by scouting; see [04](04-client-scouting.md))
 
-## 計測（2026-11-15, macOS, release）
+## Measurements (2026-11-15, macOS, release)
 
-B が参加してから最初の応答が返るまで:
+Time from B joining until its first reply:
 
-| N (queryable 数) | peer | client |
+| N (queryables) | peer | client |
 | --- | --- | --- |
 | 1 000 | 0.50 s | — |
 | 10 000 | 1.01 s | 3 ms |
 | 20 000 | 5.40 s | 3 ms |
-| 30 000 | 30 s 以内に応答なし、リンクを 6 回閉じた | — |
-| 40 000 | 30 s 以内に応答なし、A の `put` が 30 s 止まり、リンクを 6 回閉じた | 5〜8 ms |
+| 30 000 | no reply within 30 s, link closed 6 times | — |
+| 40 000 | no reply within 30 s, A's `put` stalled for 30 s, link closed 6 times | 5–8 ms |
 
-peer の 0.5 s は、peer の `zenoh::open` が scouting の待ち（`scouting/delay` 500 ms）で戻るまでの時間。
-別の環境（arm64 のエッジ機）では 10 000 で約 11 s、20 000 で 15 s 以内に応答なしだった。どの N から詰まるかは機械によって違う。
+The 0.5 s for a peer is the time a peer's `zenoh::open` takes to return after waiting for scouting (`scouting/delay`, 500 ms).
+In another environment (an arm64 edge device), a peer took about 11 s at 10 000 and got no reply within 15 s at 20 000. The N at which it stalls depends on the machine.
 
-なお A が N 個を宣言する時間そのものも O(N²) だった（10 000 で 1.1 s、20 000 で 5.2 s、40 000 で 21 s）。1.8.0 の `Session::declare_prefix` が `local_resources` を線形に探しているため（`zenoh/src/api/session.rs`）。
+The time for A to declare the N queryables was itself O(N²) as well (1.1 s at 10 000, 5.2 s at 20 000, 21 s at 40 000), because `Session::declare_prefix` in 1.8.0 searches `local_resources` linearly (`zenoh/src/api/session.rs`).

@@ -1,21 +1,21 @@
 # peer-join-stall
 
-宣言を大量に持つセッションに **peer** として参加すると止まる問題の再現（zenoh 1.8.0）。
+A repro of things stalling when a **peer** joins a session that holds many declarations (zenoh 1.8.0).
 
-- セッション A（子プロセス）が N 個の queryable を `demo/decl/{i}` に宣言し、加えて `demo/target` に応答する queryable を 1 つ置く。宣言後は 100 ms ごとに `demo/tick` に put し続け、1 秒以上返らない put があれば報告する（別スレッドの見張り）。
-- セッション B（親プロセス）が **peer** として `tcp/127.0.0.1:17501` に繋ぎ、`demo/target` に `get`（タイムアウト 2 s）を繰り返す。30 s 以内に最初の応答が来るまでの時間を測る。
-- マルチキャスト scouting は切っている。A を別プロセスにしているのは、同じプロセスだと zenoh のランタイムのスレッドを共有してしまうため。
+- Session A (a child process) declares N queryables on `demo/decl/{i}`, plus one queryable on `demo/target` that replies. After declaring, it keeps putting to `demo/tick` every 100 ms, and a watchdog thread reports any put that has not returned for 1 second or more.
+- Session B (the parent process) connects as a **peer** to `tcp/127.0.0.1:17501` and repeats a `get` on `demo/target` (2 s timeout). It measures the time until the first reply, within 30 s.
+- Multicast scouting is disabled. A runs in a separate process because in the same process it would share the zenoh runtime's threads.
 
-p2p では参加した peer に全宣言を送り、その間ルーティングテーブルの書き込みロックを持ったままになる。仕組みは [docs/01](../docs/01-peer-join-declarations.md)、解決方法は [client-join](../client-join)。
+In p2p, all declarations are sent to a joining peer while holding the routing table's write lock. See [docs/01](../docs/01-peer-join-declarations.md) for the mechanism and [client-join](../client-join) for the fix.
 
-## 実行
+## Run
 
 ```sh
 make run            # N = 40000
 make run N=20000
 ```
 
-## 出力（2026-11-15, macOS, release）
+## Output (2026-11-15, macOS, release)
 
 ```
 [A] READY 40000 queryables declared in 23.62s
@@ -34,21 +34,21 @@ make run N=20000
 REPRODUCED: peer B got no reply within 30s with N=40000; A's put blocked for up to 30 s; A closed the link 6 time(s)
 ```
 
-- B は 30 秒待っても応答を得られない。
-- A の `put` は B が参加した直後から 30 秒間返らない（ログの `put ... blocked for N s so far`）。
-- A は 5 秒ごとに `Unable to push non droppable network message ... Closing transport!` でリンクを閉じ、B が繋ぎ直すたびに同じことが起きる。
+- B gets no reply even after waiting 30 seconds.
+- A's `put` does not return for 30 seconds from right after B joins (`put ... blocked for N s so far` in the log).
+- A closes the link every 5 seconds with `Unable to push non droppable network message ... Closing transport!`, and the same thing happens each time B reconnects.
 
-N を変えたときの結果（同じ日、同じ機械）:
+Results for different N (same day, same machine):
 
-| N | B の最初の応答 | A の put の停止 | A がリンクを閉じた回数 |
+| N | B's first reply | A's put stall | Times A closed the link |
 | --- | --- | --- | --- |
-| 1 000 | 0.50 s | なし | 0 |
-| 10 000 | 1.01 s | なし | 0 |
-| 20 000 | 5.40 s | なし | 0 |
-| 30 000 | 30 s 以内になし | 1 s 以上の停止なし | 6 |
-| 40 000 | 30 s 以内になし | 30 s | 6 |
+| 1 000 | 0.50 s | none | 0 |
+| 10 000 | 1.01 s | none | 0 |
+| 20 000 | 5.40 s | none | 0 |
+| 30 000 | none within 30 s | no stall of 1 s or more | 6 |
+| 40 000 | none within 30 s | 30 s | 6 |
 
-0.5 s は peer の `zenoh::open` が `scouting/delay`（500 ms）を待って戻るまでの時間で、それより遅い分が宣言の push による。
-この Mac では詰まり始めるのが 20 000 から 30 000 の間だった。別の環境（arm64 のエッジ機）では 10 000 で約 11 s、20 000 で 15 s 以内に応答なしと、もっと小さい N で詰まった。
+The 0.5 s is the time a peer's `zenoh::open` takes to return after waiting for `scouting/delay` (500 ms); anything slower than that is due to the push of declarations.
+On this Mac it started to stall between 20 000 and 30 000. In another environment (an arm64 edge device) it stalled at a smaller N: about 11 s at 10 000, and no reply within 15 s at 20 000.
 
-A が N 個を宣言する時間自体も N の 2 乗で伸びる（40 000 で約 22 s）。[docs/01](../docs/01-peer-join-declarations.md) の最後を参照。
+The time for A to declare the N queryables itself grows with N² (about 22 s at 40 000). See the end of [docs/01](../docs/01-peer-join-declarations.md).
