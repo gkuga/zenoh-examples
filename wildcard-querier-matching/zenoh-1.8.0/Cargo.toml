@@ -1,0 +1,18 @@
+# The same program built against zenoh 1.8.0, for comparison (`make run-1.8.0`).
+# Cargo cannot hold two semver-compatible zenoh versions in one project,
+# so the switch is a second manifest that shares ../src/main.rs.
+[package]
+name = "wildcard-querier-matching-1_8_0"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "wildcard-querier-matching-1_8_0"
+path = "../src/main.rs"
+
+[dependencies]
+zenoh = { version = "=1.8.0", default-features = false, features = ["transport_tcp"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+
+[workspace]

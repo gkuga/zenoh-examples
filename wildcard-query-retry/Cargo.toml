@@ -1,0 +1,12 @@
+[package]
+name = "wildcard-query-retry"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+zenoh = { version = "=1.10.2", default-features = false, features = ["transport_tcp"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+
+# Standalone project: each sample pins its own zenoh version.
+[workspace]
