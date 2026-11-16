@@ -98,7 +98,7 @@ async fn serve(n: usize, endpoint: &str) {
 /// Session A's stdout, line by line.
 type ChildLines = Lines<BufReader<ChildStdout>>;
 
-/// What session B reads off session A's output.
+/// What the parent process reads off session A's output, while session B runs.
 #[derive(Default)]
 struct Effects {
     /// The longest time one of A's puts has been blocked, in s.
