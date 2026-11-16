@@ -2,6 +2,8 @@
 
 The fix for [wildcard-querier-matching](../wildcard-querier-matching): don't make queries conditional on a wildcard's `matching_status()` (zenoh 1.10.2).
 
+**Confirmed on:** zenoh 1.10.2 (2026-11-15), macOS; also built against 1.8.0, where the gated way works too (see below).
+
 Peer A declares its queryables 300 ms after B (standing in for a service that comes up later). B wants everything under `r/fam/*/status`.
 
 1. **retry**: issue a `get` with a 500 ms timeout; if there are no replies, wait 200 ms and retry (up to 5 times). Matching is not consulted.

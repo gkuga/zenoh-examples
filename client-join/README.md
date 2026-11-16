@@ -2,6 +2,8 @@
 
 The fix for [peer-join-stall](../peer-join-stall): make the joining side a **client** (zenoh 1.8.0).
 
+**Confirmed on:** zenoh 1.8.0 (2026-11-15) and 1.10.2 (2026-11-17), macOS. Other versions were not tried.
+
 The program is the same as peer-join-stall, except that session B's mode is `"client"` (`JOIN_MODE`).
 
 - A listens on the fixed endpoint `tcp/127.0.0.1:17511`

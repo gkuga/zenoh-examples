@@ -2,6 +2,8 @@
 
 A repro of things stalling when a **peer** joins a session that holds many declarations (zenoh 1.8.0).
 
+**Confirmed on:** zenoh 1.8.0 (2026-11-15) and 1.10.2 (2026-11-17), macOS. Other versions were not tried.
+
 - Session A (a child process) declares N queryables on `demo/decl/{i}`, plus one queryable on `demo/target` that replies. After declaring, it keeps putting to `demo/tick` every 100 ms, and a watchdog thread reports any put that has not returned for 1 second or more.
 - Session B (the parent process) connects as a **peer** to `tcp/127.0.0.1:17501` and repeats a `get` on `demo/target` (2 s timeout). It measures the time until the first reply, within 30 s.
 - Multicast scouting is disabled. A runs in a separate process because in the same process it would share the zenoh runtime's threads.

@@ -2,6 +2,8 @@
 
 Runs [expr-id-exhaustion](../expr-id-exhaustion) with the fix from a fork (zenoh 1.8.0 + patch).
 
+**Confirmed on:** zenoh 1.8.0 with the fork patch (2026-11-15), macOS.
+
 The program is the same as expr-id-exhaustion (only the port is `17542`). The only difference is these lines in Cargo.toml:
 
 ```toml
