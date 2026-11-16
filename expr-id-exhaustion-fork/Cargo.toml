@@ -12,6 +12,6 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
 [workspace]
 
 # zenoh 1.8.0 plus O(1) wrapping-cursor ExprId allocation and an "exhausted" flag
-# that falls back to sending full key expressions (commit 25c6174e).
+# that falls back to sending full key expressions (tag 1.8.0+gkuga.1, commit a574569c).
 [patch.crates-io]
-zenoh = { git = "https://github.com/gkuga/zenoh", tag = "nue-1.8.0-expr-id-2" }
+zenoh = { git = "https://github.com/gkuga/zenoh", tag = "1.8.0+gkuga.1" }
