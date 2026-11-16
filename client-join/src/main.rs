@@ -109,9 +109,9 @@ impl PutClock {
         self.started.store(0, Ordering::SeqCst);
     }
 
-    /// The put in progress, as when it started (which also tells puts apart,
-    /// since they are 100 ms apart) and how long it has been running, in ms;
-    /// `None` when idle.
+    /// The put in progress as (its start, how long it has been running in ms),
+    /// or `None` when idle. Puts are 100 ms apart, so the start also tells them
+    /// apart.
     fn running(&self) -> Option<(u64, u64)> {
         match self.started.load(Ordering::SeqCst) {
             0 => None,
