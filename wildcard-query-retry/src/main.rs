@@ -11,7 +11,7 @@
 
 use std::time::{Duration, Instant};
 
-use zenoh::query::Querier;
+use zenoh::query::{Querier, Queryable};
 
 const QUERYABLES: [&str; 2] = ["r/fam/one/status", "r/fam/two/status"];
 const WILDCARD: &str = "r/fam/*/status";
@@ -28,6 +28,29 @@ fn config(kind: &str, endpoint: &str) -> zenoh::Config {
     c.insert_json5(&format!("{kind}/endpoints"), &format!("[\"{endpoint}\"]"))
         .unwrap();
     c
+}
+
+/// Opens peer A listening on `endpoint` and peer B connecting to it, and waits
+/// until B sees A.
+async fn open_linked_pair(endpoint: &str) -> (zenoh::Session, zenoh::Session) {
+    let a = zenoh::open(config("listen", endpoint)).await.unwrap();
+    let b = zenoh::open(config("connect", endpoint)).await.unwrap();
+    while b.info().peers_zid().await.count() == 0 {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    (a, b)
+}
+
+/// Declares a queryable on each of `QUERYABLES`, replying from its own key.
+async fn declare_queryables(session: &zenoh::Session) -> Vec<Queryable<()>> {
+    let mut queryables = Vec::new();
+    for key in QUERYABLES {
+        let q = session.declare_queryable(key).callback(move |q| {
+            tokio::spawn(async move { q.reply(key, "v").await.unwrap() });
+        });
+        queryables.push(q.await.unwrap());
+    }
+    queryables
 }
 
 /// Sends one query and returns the keys that answered.
@@ -50,23 +73,10 @@ async fn main() {
     let endpoint = format!("tcp/127.0.0.1:{port}");
     println!("zenoh {}", zenoh::GIT_VERSION);
 
-    let a = zenoh::open(config("listen", &endpoint)).await.unwrap();
-    let b = zenoh::open(config("connect", &endpoint)).await.unwrap();
-    while b.info().peers_zid().await.count() == 0 {
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
-    // A's service comes up a little later than B.
-    tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(300)).await;
-        let mut queryables = Vec::new();
-        for key in QUERYABLES {
-            let q = a.declare_queryable(key).callback(move |q| {
-                tokio::spawn(async move { q.reply(key, "v").await.unwrap() });
-            });
-            queryables.push(q.await.unwrap());
-        }
-        std::future::pending::<()>().await;
-    });
+    // The sessions are kept until the exit below, since closing or dropping one
+    // blocks for about 10 s.
+    let (a, b) = open_linked_pair(&endpoint).await;
+    start_service_late(a);
     let start = Instant::now();
 
     let wildcard = b
@@ -74,25 +84,48 @@ async fn main() {
         .timeout(Duration::from_millis(500))
         .await
         .unwrap();
-    // 1. Query with a timeout and retry; the replies themselves say who is there.
-    let mut retried = Vec::new();
+    let retried = query_with_retry(&wildcard, start).await;
+    let concrete = query_concrete(&b).await;
+    let gated = query_gated(&wildcard).await;
+    report(&retried, &concrete, &gated);
+    // Exit right away instead of dropping the sessions.
+    std::process::exit(0);
+}
+
+/// A's service comes up 300 ms from now, a little later than B.
+fn start_service_late(a: zenoh::Session) {
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        // Keep the queryables (and A) to the end: dropping one undeclares it.
+        let _queryables = declare_queryables(&a).await;
+        std::future::pending::<()>().await;
+    });
+}
+
+/// 1. Queries the wildcard with a timeout and retries, up to 5 times; the replies
+///    themselves say who is there.
+async fn query_with_retry(wildcard: &Querier<'_>, start: Instant) -> Vec<String> {
     for attempt in 1..=5 {
-        retried = query(&wildcard).await;
+        let keys = query(wildcard).await;
         println!(
             "1. retry attempt {attempt} at {:.2?}: {} replies",
             start.elapsed(),
-            retried.len()
+            keys.len()
         );
-        if !retried.is_empty() {
-            break;
+        if !keys.is_empty() {
+            return keys;
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
+    Vec::new()
+}
 
-    // 2. Concrete keys: a querier per key, whose matching status is reliable.
+/// 2. Queries through a querier per concrete key, whose matching status is reliable.
+///    Returns the keys that answered a querier reporting a match.
+async fn query_concrete(session: &zenoh::Session) -> Vec<String> {
     let mut concrete = Vec::new();
     for key in QUERYABLES {
-        let querier = b.declare_querier(key).await.unwrap();
+        let querier = session.declare_querier(key).await.unwrap();
         let matching = querier.matching_status().await.unwrap().matching();
         let keys = query(&querier).await;
         println!(
@@ -103,9 +136,12 @@ async fn main() {
             concrete.extend(keys);
         }
     }
+    concrete
+}
 
-    // 3. Gated on the wildcard querier's matching status (the pattern to avoid),
-    //    tried last, when A has long been up.
+/// 3. Queries the wildcard only once its querier reports a match, waiting up to
+///    2 s for it (the pattern to avoid). Tried last, when A has long been up.
+async fn query_gated(wildcard: &Querier<'_>) -> Vec<String> {
     let listener = wildcard.matching_listener().await.unwrap();
     let matched = tokio::time::timeout(Duration::from_secs(2), async {
         while let Ok(status) = listener.recv_async().await {
@@ -115,12 +151,17 @@ async fn main() {
         }
     });
     let gated = if wildcard.matching_status().await.unwrap().matching() || matched.await.is_ok() {
-        query(&wildcard).await
+        query(wildcard).await
     } else {
         Vec::new() // no match within 2 s: the gated caller gives up
     };
     println!("3. gated on matching: {} replies {gated:?}", gated.len());
+    gated
+}
 
+/// Prints the verdict: retrying and concrete keys should get both replies, and on
+/// 1.9.0 and later the gated query nothing.
+fn report(retried: &[String], concrete: &[String], gated: &[String]) {
     if gated.is_empty() && retried.len() == 2 && concrete.len() == 2 {
         println!(
             "OK: the gated query got nothing, but retrying the wildcard got {} and concrete keys got {} ({})",
@@ -142,6 +183,4 @@ async fn main() {
             zenoh::GIT_VERSION
         );
     }
-    // Closing or dropping a session blocks for about 10 s, so exit right away.
-    std::process::exit(0);
 }
