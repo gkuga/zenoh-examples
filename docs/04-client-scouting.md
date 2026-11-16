@@ -8,11 +8,13 @@ A client-mode session has several defaults that differ from a peer's. These are 
 
 Defaults of `scouting/multicast/autoconnect` (`zenoh-config/src/defaults.rs`):
 
-| Mode | Default | Meaning |
-| --- | --- | --- |
-| router | `""` | Does not connect automatically |
-| peer | `"router\|peer"` | Connects to routers and peers |
-| client | `"router"` | **Connects to routers only** |
+| Mode | 1.8.0 | 1.9.0 and later | Meaning in 1.8.0 |
+| --- | --- | --- | --- |
+| router | `""` | `""` | Does not connect automatically |
+| peer | `"router\|peer"` | `"router\|peer\|client"` | Connects to routers and peers |
+| client | `"router"` | `"router\|peer\|client"` | **Connects to routers only** |
+
+This section applies to 1.8.0. Since 1.9.0 a client connects to a scouted peer by default, so it does not fail this way (checked on 1.10.2, 2026-11-17). Setting `autoconnect` explicitly, as below, gives the same behavior on both.
 
 Even when a client finds a peer by multicast scouting, it does not connect, and `zenoh::open` fails after `scouting/timeout` (3 seconds). To also connect to peers:
 

@@ -2,6 +2,8 @@
 
 A repro of wildcard queriers not reporting a match in `matching_status()` since zenoh 1.9.0.
 
+**Confirmed on:** zenoh 1.9.0, 1.10.0, 1.10.1 and 1.10.2 (2026-11-15), macOS. Not on 1.8.0, which reports a match.
+
 Peer A declares queryables on `r/fam/one/status` and `r/fam/two/status`, and peer B declares queriers on one concrete key and three wildcards. For each, it prints `matching_status()`, whether `matching_listener` fired within 1 second, and the number of `get` replies.
 A and B are two sessions in one process, connected over TCP on 127.0.0.1:17551, with multicast scouting disabled.
 

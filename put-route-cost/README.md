@@ -2,6 +2,8 @@
 
 A repro of `put`s to undeclared keys getting slower the more declarations a session has (zenoh 1.8.0).
 
+**Confirmed on:** zenoh 1.8.0 (2026-11-15) and 1.10.2 (2026-11-17), macOS. Other versions were not tried.
+
 - Session A and peer B connect over `tcp/127.0.0.1:17581` (no multicast scouting). Declarations are made after connecting, so the join-time push from [peer-join-stall](../peer-join-stall) does not occur.
 - For each of D keys `demo/thing/{i}/value`, A and B each declare one subscriber and one queryable (4 declarations per key, on concrete keys). D is increased through 0, 1 000, 5 000, 10 000, 20 000.
 - For each D, A puts once to each of K = 10 000 distinct undeclared keys `demo/point/{j}/@state` and measures the time per put. They match no declaration, so the data goes nowhere; only route computation is measured.

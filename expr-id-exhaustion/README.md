@@ -2,6 +2,8 @@
 
 A repro of a session's declarations never returning once the u16 ExprIds of one link are used up (zenoh 1.8.0, release build).
 
+**Confirmed on:** zenoh 1.8.0 (2026-11-15) and 1.10.2 (2026-11-17), macOS. Other versions were not tried.
+
 - Peer B (the parent process) first connects to session A (a child process) on `tcp/127.0.0.1:17541` (no multicast scouting).
 - A then declares N = 70 000 liveliness tokens on distinct keys `demo/token/{i}`. Each declaration uses one ExprId on the face towards B.
 - A watchdog thread in A reports any declaration that has not returned for 10 s or more. If one has not returned for 30 s, the parent prints `REPRODUCED`, kills the child and exits (overall limit 600 s).
