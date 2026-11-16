@@ -13,6 +13,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use zenoh::query::Queryable;
 use zenoh::Wait;
 
 /// The mode session B joins in (`client-join` sets "client" here).
@@ -38,7 +39,21 @@ fn config(mode: &str, listen: Option<&str>, connect: Option<&str>) -> zenoh::Con
 /// Session A: declares `n` queryables plus one that answers, then puts forever.
 async fn serve(n: usize, endpoint: &str) {
     zenoh::init_log_from_env_or("error");
-    // Exit when the parent goes away (its end of our stdin closes).
+    exit_with_parent();
+
+    let session = zenoh::open(config("peer", Some(endpoint), None))
+        .await
+        .unwrap();
+    let start = Instant::now();
+    // Keep the queryables to the end: dropping one undeclares it.
+    let _queryables = declare_queryables(&session, n);
+    println!("READY {n} queryables declared in {:.2?}", start.elapsed());
+
+    put_forever(&session).await;
+}
+
+/// Exits when the parent goes away (its end of our stdin closes).
+fn exit_with_parent() {
     std::thread::spawn(|| {
         let mut line = String::new();
         while std::io::stdin()
@@ -47,11 +62,11 @@ async fn serve(n: usize, endpoint: &str) {
         {}
         std::process::exit(0);
     });
+}
 
-    let session = zenoh::open(config("peer", Some(endpoint), None))
-        .await
-        .unwrap();
-    let start = Instant::now();
+/// Declares `n` queryables that do nothing, on `demo/decl/{i}`, plus one on
+/// `TARGET` that answers.
+fn declare_queryables(session: &zenoh::Session, n: usize) -> Vec<Queryable<()>> {
     let mut queryables = Vec::with_capacity(n + 1);
     for i in 0..n {
         let q = session
@@ -65,33 +80,73 @@ async fn serve(n: usize, endpoint: &str) {
         .callback(|q| q.reply(TARGET, "ok").wait().unwrap())
         .wait();
     queryables.push(target.unwrap());
-    println!("READY {n} queryables declared in {:.2?}", start.elapsed());
+    queryables
+}
 
-    // A watchdog thread reports a put that does not return within 1 s,
-    // since a put blocked on the routing tables' lock blocks its thread.
-    let epoch = Instant::now();
-    let put_started = Arc::new(AtomicU64::new(0)); // ms since epoch + 1, 0 = idle
-    let watched = put_started.clone();
+/// When the put in progress started, readable from another thread.
+struct PutClock {
+    epoch: Instant,
+    /// ms since `epoch` + 1 when the put in progress started, 0 when idle.
+    started: AtomicU64,
+}
+
+impl PutClock {
+    fn new() -> Self {
+        PutClock {
+            epoch: Instant::now(),
+            started: AtomicU64::new(0),
+        }
+    }
+
+    fn now_ms(&self) -> u64 {
+        self.epoch.elapsed().as_millis() as u64
+    }
+
+    fn start(&self) {
+        self.started.store(self.now_ms() + 1, Ordering::SeqCst);
+    }
+
+    fn stop(&self) {
+        self.started.store(0, Ordering::SeqCst);
+    }
+
+    /// How long the put in progress has been running, in ms; `None` when idle.
+    fn running_ms(&self) -> Option<u64> {
+        match self.started.load(Ordering::SeqCst) {
+            0 => None,
+            started => Some(self.now_ms() + 1 - started),
+        }
+    }
+}
+
+/// Reports, once a second, a put that has not returned within 1 s. It runs on
+/// its own thread, since a put blocked on the routing tables' lock blocks its
+/// thread.
+fn watch_puts(clock: Arc<PutClock>) {
     std::thread::spawn(move || {
         let mut reported = 0;
         loop {
             std::thread::sleep(Duration::from_millis(250));
-            let started = watched.load(Ordering::SeqCst);
-            if started == 0 {
+            let Some(ms) = clock.running_ms() else {
                 reported = 0;
                 continue;
-            }
-            let stuck = epoch.elapsed().as_millis() as u64 + 1 - started;
-            if stuck / 1000 > reported {
-                reported = stuck / 1000;
+            };
+            if ms / 1000 > reported {
+                reported = ms / 1000;
                 println!("put on demo/tick blocked for {reported} s so far");
             }
         }
     });
+}
+
+/// Puts on `demo/tick` every 100 ms, forever, under a watchdog.
+async fn put_forever(session: &zenoh::Session) {
+    let clock = Arc::new(PutClock::new());
+    watch_puts(clock.clone());
     loop {
-        put_started.store(epoch.elapsed().as_millis() as u64 + 1, Ordering::SeqCst);
+        clock.start();
         session.put("demo/tick", "x").wait().unwrap();
-        put_started.store(0, Ordering::SeqCst);
+        clock.stop();
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
