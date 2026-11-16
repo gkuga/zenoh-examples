@@ -110,11 +110,13 @@ impl PutClock {
         self.started.store(0, Ordering::SeqCst);
     }
 
-    /// How long the put in progress has been running, in ms; `None` when idle.
-    fn running_ms(&self) -> Option<u64> {
+    /// The put in progress, as when it started (which also tells puts apart,
+    /// since they are 100 ms apart) and how long it has been running, in ms;
+    /// `None` when idle.
+    fn running(&self) -> Option<(u64, u64)> {
         match self.started.load(Ordering::SeqCst) {
             0 => None,
-            started => Some(self.now_ms() + 1 - started),
+            started => Some((started, self.now_ms() + 1 - started)),
         }
     }
 }
@@ -124,13 +126,17 @@ impl PutClock {
 /// thread.
 fn watch_puts(clock: Arc<PutClock>) {
     std::thread::spawn(move || {
-        let mut reported = 0;
+        // The put reported on (its start), and how many seconds of it were reported.
+        let (mut watched, mut reported) = (0, 0);
         loop {
             std::thread::sleep(Duration::from_millis(250));
-            let Some(ms) = clock.running_ms() else {
-                reported = 0;
+            let Some((started, ms)) = clock.running() else {
                 continue;
             };
+            // A new put, even if the idle gap between the two was missed.
+            if started != watched {
+                (watched, reported) = (started, 0);
+            }
             if ms / 1000 > reported {
                 reported = ms / 1000;
                 println!("put on demo/tick blocked for {reported} s so far");
@@ -261,14 +267,11 @@ async fn query_until_first_reply(session: &zenoh::Session, start: Instant) -> Op
             .timeout(Duration::from_secs(2))
             .await
             .unwrap();
-        let mut first_reply = None;
         while let Ok(reply) = get.recv_async().await {
             if reply.result().is_ok() {
-                first_reply = Some(start.elapsed());
+                // B's first reply since it joined: stop here.
+                return Some(start.elapsed());
             }
-        }
-        if first_reply.is_some() {
-            return first_reply;
         }
         // A get with no route ends at once; retry, noting it at most once a second.
         if start.elapsed().as_secs() > noted {
