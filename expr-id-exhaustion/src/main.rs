@@ -13,11 +13,12 @@
 //! Usage: expr-id-exhaustion [N] [PORT]
 
 use std::io::{BufRead, BufReader};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};
 
+use zenoh::liveliness::LivelinessToken;
 use zenoh::Wait;
 
 /// A declaration that has not returned for this long is reported as a hang.
@@ -43,15 +44,7 @@ fn config(mode: &str, listen: Option<&str>, connect: Option<&str>) -> zenoh::Con
 /// Session A: waits for B, then declares `n` liveliness tokens.
 async fn serve(n: usize, endpoint: &str) {
     zenoh::init_log_from_env_or("warn");
-    // Exit when the parent goes away (its end of our stdin closes).
-    std::thread::spawn(|| {
-        let mut line = String::new();
-        while std::io::stdin()
-            .read_line(&mut line)
-            .map_or(false, |r| r > 0)
-        {}
-        std::process::exit(0);
-    });
+    exit_with_parent();
 
     let session = zenoh::open(config("peer", Some(endpoint), None))
         .await
@@ -61,14 +54,34 @@ async fn serve(n: usize, endpoint: &str) {
     }
     println!("B connected, declaring {n} liveliness tokens");
 
-    // A watchdog thread reports a declaration that does not return.
-    let done = Arc::new(AtomicUsize::new(0));
-    let watched = done.clone();
+    let declared = Arc::new(AtomicUsize::new(0));
+    watch_declarations(declared.clone(), n);
+    // Keep the tokens to the end: dropping one undeclares it.
+    let _tokens = declare_tokens(&session, n, &declared);
+    std::future::pending::<()>().await;
+}
+
+/// Exits when the parent goes away (its end of our stdin closes).
+fn exit_with_parent() {
+    std::thread::spawn(|| {
+        let mut line = String::new();
+        while std::io::stdin()
+            .read_line(&mut line)
+            .map_or(false, |r| r > 0)
+        {}
+        std::process::exit(0);
+    });
+}
+
+/// Reports, every 10 s, a declaration that has not returned, until all `n` have.
+/// It runs on its own thread, since a hung declaration blocks its thread.
+fn watch_declarations(declared: Arc<AtomicUsize>, n: usize) {
     std::thread::spawn(move || {
+        // The count last seen, and for how many seconds it has not moved.
         let (mut last, mut stuck) = (0, 0);
         loop {
             std::thread::sleep(Duration::from_secs(1));
-            let d = watched.load(Ordering::SeqCst);
+            let d = declared.load(Ordering::SeqCst);
             if d >= n {
                 return;
             }
@@ -82,7 +95,15 @@ async fn serve(n: usize, endpoint: &str) {
             }
         }
     });
+}
 
+/// Declares a liveliness token on each of `demo/token/0..n`, counting them in
+/// `declared` and printing progress every 5000.
+fn declare_tokens(
+    session: &zenoh::Session,
+    n: usize,
+    declared: &AtomicUsize,
+) -> Vec<LivelinessToken> {
     let start = Instant::now();
     let mut tokens = Vec::with_capacity(n);
     for i in 0..n {
@@ -93,13 +114,13 @@ async fn serve(n: usize, endpoint: &str) {
                 .wait()
                 .unwrap(),
         );
-        done.store(i + 1, Ordering::SeqCst);
+        declared.store(i + 1, Ordering::SeqCst);
         if (i + 1) % 5000 == 0 {
             println!("declared {} at {:.1?}", i + 1, start.elapsed());
         }
     }
     println!("DONE all {n} declared in {:.1?}", start.elapsed());
-    std::future::pending::<()>().await;
+    tokens
 }
 
 #[tokio::main(flavor = "multi_thread")]
@@ -112,9 +133,32 @@ async fn main() {
     let port: u16 = args.get(2).map_or(17541, |s| s.parse().unwrap());
     let endpoint = format!("tcp/127.0.0.1:{port}");
 
-    // Run session A in a child process, so a hang there cannot block this one.
+    // Job 1: watch session A, whose output lines arrive on `lines`.
+    let (mut child, lines) = spawn_session_a(n, &endpoint);
+
+    // Job 2: session B connects before A declares anything, then follows A until
+    // it finishes or hangs. The session is kept until the exit below, since
+    // closing or dropping it blocks for about 10 s.
+    let start = Instant::now();
+    let session = zenoh::open(config("peer", None, Some(&endpoint)))
+        .await
+        .unwrap();
+    println!("[B] connected as peer via {endpoint}");
+    let verdict = follow_session_a(&lines, &session, n, start).await;
+
+    println!("{verdict} (after {:.1?})", start.elapsed());
+    let _ = child.kill();
+    let _ = child.wait();
+    // Exit right away instead of dropping the session.
+    std::process::exit(0);
+}
+
+/// Starts session A in a child process (`serve`), so a hang there cannot block
+/// this one. A thread echoes A's output and forwards each line on the returned
+/// channel. A exits when its stdin closes, i.e. when this process goes away.
+fn spawn_session_a(n: usize, endpoint: &str) -> (Child, mpsc::Receiver<String>) {
     let mut child = Command::new(std::env::current_exe().unwrap())
-        .args(["serve", &n.to_string(), &endpoint])
+        .args(["serve", &n.to_string(), endpoint])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -127,58 +171,38 @@ async fn main() {
             let _ = tx.send(line);
         }
     });
+    (child, rx)
+}
 
-    let start = Instant::now();
-    let session = zenoh::open(config("peer", None, Some(&endpoint)))
-        .await
-        .unwrap();
-    println!("[B] connected as peer via {endpoint}");
-
-    let verdict = loop {
-        let line = match rx.recv_timeout(Duration::from_secs(1)) {
+/// Reads A's output until A hangs, finishes or exits, or `LIMIT` has passed
+/// since `start`, and returns the verdict.
+async fn follow_session_a(
+    lines: &mpsc::Receiver<String>,
+    session: &zenoh::Session,
+    n: usize,
+    start: Instant,
+) -> String {
+    loop {
+        let line = match lines.recv_timeout(Duration::from_secs(1)) {
             Ok(line) => line,
             Err(mpsc::RecvTimeoutError::Timeout) if start.elapsed() < LIMIT => continue,
             Err(mpsc::RecvTimeoutError::Timeout) => {
-                break format!("TIMEOUT: A neither finished nor hung within {LIMIT:?}");
+                return format!("TIMEOUT: A neither finished nor hung within {LIMIT:?}");
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => {
-                break "REPRODUCED: A exited while declaring (a debug build panics on overflow)"
+                return "REPRODUCED: A exited while declaring (a debug build panics on overflow)"
                     .into();
             }
         };
-        if line.contains(&format!("has not returned for {} s", HANG.as_secs())) {
-            let k = line
-                .split_whitespace()
-                .nth(1)
-                .unwrap()
-                .trim_start_matches('#')
-                .to_string();
-            break format!(
+        if let Some(k) = hung_declaration(&line) {
+            return format!(
                 "REPRODUCED: A hung at declaration #{k} of {n}; it has not returned for {HANG:?} (65 535 ExprIds)"
             );
         }
         if line.starts_with("DONE") {
             // Every declaration returned: check that B sees the last token, past the id space.
-            // B may still be taking in the burst, so ask again for up to 60 s.
             let key = format!("demo/token/{}", n - 1);
-            let asked = Instant::now();
-            let mut seen = None;
-            while seen.is_none() && asked.elapsed() < Duration::from_secs(60) {
-                let get = session
-                    .liveliness()
-                    .get(&key)
-                    .timeout(Duration::from_secs(5));
-                let get = get.await.unwrap();
-                while let Ok(reply) = get.recv_async().await {
-                    if reply.result().is_ok() {
-                        seen = Some(asked.elapsed());
-                    }
-                }
-                if seen.is_none() {
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                }
-            }
-            break match seen {
+            return match find_token(session, &key).await {
                 Some(t) => {
                     format!("OK: A declared all {n} tokens and B sees {key} ({t:.1?} after DONE)")
                 }
@@ -187,10 +211,35 @@ async fn main() {
                 ),
             };
         }
-    };
-    println!("{verdict} (after {:.1?})", start.elapsed());
-    let _ = child.kill();
-    let _ = child.wait();
-    // Closing or dropping a session blocks for about 10 s, so exit right away.
-    std::process::exit(0);
+    }
+}
+
+/// The number of the declaration in A's watchdog line, once it has not returned
+/// for `HANG` ("declaration #65537 has not returned for 30 s" gives "65537").
+fn hung_declaration(line: &str) -> Option<&str> {
+    if !line.contains(&format!("has not returned for {} s", HANG.as_secs())) {
+        return None;
+    }
+    Some(line.split_whitespace().nth(1)?.trim_start_matches('#'))
+}
+
+/// Asks for the liveliness token `key` until B sees it, for up to 60 s, since B
+/// may still be taking in the burst. Returns how long that took.
+async fn find_token(session: &zenoh::Session, key: &str) -> Option<Duration> {
+    let asked = Instant::now();
+    while asked.elapsed() < Duration::from_secs(60) {
+        let get = session
+            .liveliness()
+            .get(key)
+            .timeout(Duration::from_secs(5))
+            .await
+            .unwrap();
+        while let Ok(reply) = get.recv_async().await {
+            if reply.result().is_ok() {
+                return Some(asked.elapsed());
+            }
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+    None
 }

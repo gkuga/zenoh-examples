@@ -10,6 +10,8 @@
 
 use std::time::Duration;
 
+use zenoh::query::Queryable;
+
 const QUERYABLES: [&str; 2] = ["r/fam/one/status", "r/fam/two/status"];
 const QUERIERS: [&str; 4] = ["r/fam/one/status", "r/fam/*/status", "r/**", "r/fam/one/*"];
 
@@ -27,6 +29,39 @@ fn config(kind: &str, endpoint: &str) -> zenoh::Config {
     c
 }
 
+/// Opens peer A listening on `endpoint` and peer B connecting to it, and waits
+/// until B sees A.
+async fn open_linked_pair(endpoint: &str) -> (zenoh::Session, zenoh::Session) {
+    let a = zenoh::open(config("listen", endpoint)).await.unwrap();
+    let b = zenoh::open(config("connect", endpoint)).await.unwrap();
+    while b.info().peers_zid().await.count() == 0 {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    (a, b)
+}
+
+/// Declares a queryable on each of `QUERYABLES`, replying from its own key.
+async fn declare_queryables(session: &zenoh::Session) -> Vec<Queryable<()>> {
+    let mut queryables = Vec::new();
+    for key in QUERYABLES {
+        let q = session.declare_queryable(key).callback(move |q| {
+            tokio::spawn(async move { q.reply(key, "v").await.unwrap() });
+        });
+        queryables.push(q.await.unwrap());
+    }
+    queryables
+}
+
+/// What one querier reports, and what its `get` receives.
+struct Probe {
+    /// What `matching_listener` reported within 1 s, if anything.
+    event: Option<bool>,
+    /// `matching_status()`, read after the listener has had its 1 s.
+    status: bool,
+    /// How many replies its `get` received.
+    replies: usize,
+}
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
     let port: u16 = std::env::args()
@@ -35,45 +70,58 @@ async fn main() {
     let endpoint = format!("tcp/127.0.0.1:{port}");
     println!("zenoh {}", zenoh::GIT_VERSION);
 
-    let a = zenoh::open(config("listen", &endpoint)).await.unwrap();
-    let b = zenoh::open(config("connect", &endpoint)).await.unwrap();
-    while b.info().peers_zid().await.count() == 0 {
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
-    let mut queryables = Vec::new();
-    for key in QUERYABLES {
-        let q = a.declare_queryable(key).callback(move |q| {
-            tokio::spawn(async move { q.reply(key, "v").await.unwrap() });
-        });
-        queryables.push(q.await.unwrap());
-    }
+    // The sessions are kept until the exit below, since closing or dropping one
+    // blocks for about 10 s.
+    let (a, b) = open_linked_pair(&endpoint).await;
+    // Keep the queryables to the end: dropping one undeclares it.
+    let _queryables = declare_queryables(&a).await;
     // Give the declarations time to reach B.
     tokio::time::sleep(Duration::from_millis(500)).await;
 
     let mut wrong = Vec::new();
     for key in QUERIERS {
-        let querier = b
-            .declare_querier(key)
-            .timeout(Duration::from_secs(2))
-            .await
-            .unwrap();
-        let listener = querier.matching_listener().await.unwrap();
-        let event = tokio::time::timeout(Duration::from_secs(1), listener.recv_async()).await;
-        let event = event.ok().and_then(|r| r.ok()).map(|s| s.matching());
-        let status = querier.matching_status().await.unwrap().matching();
-        let replies = querier.get().await.unwrap();
-        let mut answered = 0;
-        while let Ok(reply) = replies.recv_async().await {
-            answered += reply.result().is_ok() as usize;
-        }
+        let p = probe(&b, key).await;
         println!(
-            "querier {key:<18} matching_status={status:<5} listener_event={:<11} get replies={answered}",
-            format!("{event:?}")
+            "querier {key:<18} matching_status={:<5} listener_event={:<11} get replies={}",
+            p.status,
+            format!("{:?}", p.event),
+            p.replies
         );
-        if answered > 0 && !status {
+        if p.replies > 0 && !p.status {
             wrong.push(key);
         }
     }
+    report(&wrong);
+    // Exit right away instead of dropping the sessions.
+    std::process::exit(0);
+}
+
+/// Declares a querier on `key` and probes it: its matching listener, its matching
+/// status, then one `get`.
+async fn probe(session: &zenoh::Session, key: &'static str) -> Probe {
+    let querier = session
+        .declare_querier(key)
+        .timeout(Duration::from_secs(2))
+        .await
+        .unwrap();
+    let listener = querier.matching_listener().await.unwrap();
+    let event = tokio::time::timeout(Duration::from_secs(1), listener.recv_async()).await;
+    let event = event.ok().and_then(|r| r.ok()).map(|s| s.matching());
+    let status = querier.matching_status().await.unwrap().matching();
+    let replies = querier.get().await.unwrap();
+    let mut answered = 0;
+    while let Ok(reply) = replies.recv_async().await {
+        answered += reply.result().is_ok() as usize;
+    }
+    Probe {
+        event,
+        status,
+        replies: answered,
+    }
+}
+
+/// Prints the verdict: `wrong` lists the queriers that got replies but report no match.
+fn report(wrong: &[&str]) {
     if wrong.is_empty() {
         println!(
             "OK: every querier that gets replies reports a match ({})",
@@ -86,6 +134,4 @@ async fn main() {
             zenoh::GIT_VERSION
         );
     }
-    // Closing or dropping a session blocks for about 10 s, so exit right away.
-    std::process::exit(0);
 }
