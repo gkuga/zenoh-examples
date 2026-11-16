@@ -5,17 +5,19 @@ Each sample is its own Cargo project (each pins its own zenoh version, so an emp
 
 The mechanisms behind each problem are explained in [docs](docs/README.md).
 
-| Directory | Kind | zenoh | What it shows |
-| --- | --- | --- | --- |
-| [peer-join-stall](peer-join-stall) | Repro | 1.8.0 | When a **peer** joins a session that holds many declarations, the first reply never arrives, the other side's `put` stalls, and the link is closed every 5 seconds |
-| [client-join](client-join) | Fix | 1.8.0 | Same setup, but the joining side is a **client**: replies come back in a few ms even with 40k queryables |
-| [expr-id-exhaustion](expr-id-exhaustion) | Repro | 1.8.0 | Using up the u16 ExprIds (65 535) on one link makes declarations never return (release build) |
-| [expr-id-exhaustion-fork](expr-id-exhaustion-fork) | Fix (fork) | 1.8.0 + patch | With a fork (gkuga/zenoh `25c6174`) via `[patch.crates-io]`, exhausting the ExprIds no longer hangs |
-| [wildcard-querier-matching](wildcard-querier-matching) | Repro | 1.10.2 / 1.8.0 | Since 1.9.0, `matching_status()` of a wildcard querier stays false (although `get` gets replies). `make compare` compares with 1.8.0 |
-| [wildcard-query-retry](wildcard-query-retry) | Fix | 1.10.2 | Don't wait for matching: retry a `get` with a timeout, or query concrete keys |
-| [client-scouting](client-scouting) | Repro + fix | 1.8.0 | A client does not connect to a **peer** it found by scouting (autoconnect), and fails immediately against an endpoint that is not listening yet (`connect/timeout_ms`) |
-| [put-route-cost](put-route-cost) | Repro | 1.8.0 | A `put` to an undeclared key has no cached route and intersects with every declaration each time. With 20k declared keys a put goes from 0.35 µs to 814 µs |
-| [put-route-fix](put-route-fix) | Fix | 1.8.0 | (a) put through a per-key `Publisher` (stays at 0.1 µs), (b) batch many values into one put |
+| Directory | Kind | zenoh | Confirmed on | What it shows |
+| --- | --- | --- | --- | --- |
+| [peer-join-stall](peer-join-stall) | Repro | 1.8.0 | 1.8.0, 1.10.2 | When a **peer** joins a session that holds many declarations, the first reply never arrives, the other side's `put` stalls, and the link is closed every 5 seconds |
+| [client-join](client-join) | Fix | 1.8.0 | 1.8.0, 1.10.2 | Same setup, but the joining side is a **client**: replies come back in a few ms even with 40k queryables |
+| [expr-id-exhaustion](expr-id-exhaustion) | Repro | 1.8.0 | 1.8.0, 1.10.2 | Using up the u16 ExprIds (65 535) on one link makes declarations never return (release build) |
+| [expr-id-exhaustion-fork](expr-id-exhaustion-fork) | Fix (fork) | 1.8.0 + patch | 1.8.0 + patch | With a fork (gkuga/zenoh `25c6174`) via `[patch.crates-io]`, exhausting the ExprIds no longer hangs |
+| [wildcard-querier-matching](wildcard-querier-matching) | Repro | 1.10.2 / 1.8.0 | 1.9.0 – 1.10.2 (not 1.8.0) | Since 1.9.0, `matching_status()` of a wildcard querier stays false (although `get` gets replies). `make compare` compares with 1.8.0 |
+| [wildcard-query-retry](wildcard-query-retry) | Fix | 1.10.2 | 1.10.2, 1.8.0 | Don't wait for matching: retry a `get` with a timeout, or query concrete keys |
+| [client-scouting](client-scouting) | Repro + fix | 1.8.0 | autoconnect: 1.8.0 only; `timeout_ms`: 1.8.0, 1.10.2 | A client does not connect to a **peer** it found by scouting (autoconnect), and fails immediately against an endpoint that is not listening yet (`connect/timeout_ms`) |
+| [put-route-cost](put-route-cost) | Repro | 1.8.0 | 1.8.0, 1.10.2 | A `put` to an undeclared key has no cached route and intersects with every declaration each time. With 20k declared keys a put goes from 0.35 µs to 814 µs |
+| [put-route-fix](put-route-fix) | Fix | 1.8.0 | 1.8.0, 1.10.2 | (a) put through a per-key `Publisher` (stays at 0.1 µs), (b) batch many values into one put |
+
+"zenoh" is the version the sample builds against. "Confirmed on" lists the versions on which the sample was run and showed what it describes (1.8.0 on 2026-11-15, 1.10.2 on 2026-11-17, macOS; 1.9.0 to 1.10.1 only for the wildcard querier). A version that is not listed was not tried: that does not mean the problem is fixed there. Some of these problems are fixed in the fork `gkuga/zenoh`; see its `PATCHES.md`.
 
 ## Common structure
 

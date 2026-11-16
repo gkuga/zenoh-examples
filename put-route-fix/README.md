@@ -2,6 +2,8 @@
 
 Two fixes for [put-route-cost](../put-route-cost) (zenoh 1.8.0).
 
+**Confirmed on:** zenoh 1.8.0 (2026-11-15) and 1.10.2 (2026-11-17), macOS. Other versions were not tried.
+
 The setup is the same as put-route-cost (`tcp/127.0.0.1:17582`). For each D, A emits K = 10 000 values (one per key `demo/point/{j}/@state`) in the following three ways and compares the time per value.
 
 | Column | How |
