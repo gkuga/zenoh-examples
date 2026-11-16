@@ -11,7 +11,11 @@
 
 use std::time::{Duration, Instant};
 
+use zenoh::pubsub::Publisher;
 use zenoh::Wait;
+
+/// The D values measured by default.
+const DEFAULT_DS: &str = "0,1000,5000,10000,20000";
 
 fn config(kind: &str, endpoint: &str) -> zenoh::Config {
     let mut c = zenoh::Config::default();
@@ -25,6 +29,22 @@ fn config(kind: &str, endpoint: &str) -> zenoh::Config {
     c.insert_json5(&format!("{kind}/endpoints"), &format!("[\"{endpoint}\"]"))
         .unwrap();
     c
+}
+
+/// Opens session A listening on `endpoint` and peer B connecting to it, and
+/// waits until A sees B.
+async fn open_linked_pair(endpoint: &str) -> (zenoh::Session, zenoh::Session) {
+    let a = zenoh::open(config("listen", endpoint)).await.unwrap();
+    let b = zenoh::open(config("connect", endpoint)).await.unwrap();
+    while a.info().peers_zid().await.count() == 0 {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    (a, b)
+}
+
+/// Parses a comma-separated list of D values.
+fn parse_ds(list: &str) -> Vec<usize> {
+    list.split(',').map(|s| s.parse().unwrap()).collect()
 }
 
 /// Declares a subscriber and a queryable on keys `from..to`, kept alive by leaking them.
@@ -48,6 +68,13 @@ fn declare(session: &zenoh::Session, from: usize, to: usize) {
     }
 }
 
+/// Adds declarations on A and B for keys `from..to`, and gives B's time to reach A.
+async fn declare_both(a: &zenoh::Session, b: &zenoh::Session, from: usize, to: usize) {
+    declare(a, from, to);
+    declare(b, from, to);
+    tokio::time::sleep(Duration::from_millis(500)).await;
+}
+
 /// Runs `f` and returns µs per value for `k` values.
 fn per_value(k: usize, f: impl FnOnce()) -> f64 {
     let start = Instant::now();
@@ -55,36 +82,82 @@ fn per_value(k: usize, f: impl FnOnce()) -> f64 {
     start.elapsed().as_secs_f64() * 1e6 / k as f64
 }
 
+/// The undeclared way: `session.put` to each of `k` keys (the problem, for reference).
+fn put_undeclared(session: &zenoh::Session, k: usize) {
+    for j in 0..k {
+        session
+            .put(format!("demo/point/{j}/@state"), "1")
+            .wait()
+            .unwrap();
+    }
+}
+
+/// (a) One put through each publisher.
+fn put_through(publishers: &[Publisher]) {
+    publishers.iter().for_each(|p| p.put("1").wait().unwrap())
+}
+
+/// (b) One put carrying every entry (here plain "key=value" lines).
+fn put_aggregated(session: &zenoh::Session, k: usize) {
+    let mut payload = String::with_capacity(k * 32);
+    for j in 0..k {
+        payload.push_str(&format!("demo/point/{j}=1\n"));
+    }
+    session.put("demo/points/@state", payload).wait().unwrap();
+}
+
+/// The measurement at one D, in µs per value.
+struct Row {
+    /// How many keys have declarations (4 each).
+    d: usize,
+    undeclared: f64,
+    /// Round 2 through the publishers.
+    publisher: f64,
+    aggregated: f64,
+}
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
     let args: Vec<String> = std::env::args().collect();
     let k: usize = args.get(1).map_or(10_000, |s| s.parse().unwrap());
-    let ds: Vec<usize> = args
-        .get(2)
-        .map_or("0,1000,5000,10000,20000", String::as_str)
-        .split(',')
-        .map(|s| s.parse().unwrap())
-        .collect();
+    let ds = parse_ds(args.get(2).map_or(DEFAULT_DS, String::as_str));
     let port: u16 = args.get(3).map_or(17582, |s| s.parse().unwrap());
     let endpoint = format!("tcp/127.0.0.1:{port}");
 
-    let a = zenoh::open(config("listen", &endpoint)).await.unwrap();
-    let b = zenoh::open(config("connect", &endpoint)).await.unwrap();
-    while a.info().peers_zid().await.count() == 0 {
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
+    // The sessions are kept until the exit below, since closing or dropping one
+    // blocks for about 10 s.
+    let (a, b) = open_linked_pair(&endpoint).await;
+    let publishers = declare_publishers(&a, k);
+    let rows = measure(&a, &b, &publishers, k, &ds).await;
+    report(&rows, k);
+    // Exit right away instead of dropping the sessions.
+    std::process::exit(0);
+}
 
-    // (a) One publisher per key, declared once, before any other declaration.
+/// (a) Declares one publisher per key, once, before any other declaration.
+fn declare_publishers(session: &zenoh::Session, k: usize) -> Vec<Publisher<'static>> {
     let start = Instant::now();
-    let publishers: Vec<_> = (0..k)
+    let publishers = (0..k)
         .map(|j| {
-            a.declare_publisher(format!("demo/point/{j}/@state"))
+            session
+                .declare_publisher(format!("demo/point/{j}/@state"))
                 .wait()
                 .unwrap()
         })
         .collect();
     println!("declared {k} publishers in {:.2?}", start.elapsed());
+    publishers
+}
 
+/// For each D in `ds`, in order, adds declarations up to D keys, then times the
+/// three ways of sending `k` values from A. Prints a row per D.
+async fn measure(
+    a: &zenoh::Session,
+    b: &zenoh::Session,
+    publishers: &[Publisher<'_>],
+    k: usize,
+    ds: &[usize],
+) -> Vec<Row> {
     println!("us per value, K = {k} values, per D keys (4 declarations each):");
     println!(
         "{:>7}  {:>11}  {:>11}  {:>11}  {:>11}",
@@ -92,56 +165,45 @@ async fn main() {
     );
     let mut rows = Vec::new();
     let mut declared = 0;
-    for &d in &ds {
-        declare(&a, declared, d);
-        declare(&b, declared, d);
+    for &d in ds {
+        declare_both(a, b, declared, d).await;
         declared = d;
-        // Let B's declarations reach A.
-        tokio::time::sleep(Duration::from_millis(500)).await;
-
-        let undeclared = per_value(k, || {
-            for j in 0..k {
-                a.put(format!("demo/point/{j}/@state"), "1").wait().unwrap();
-            }
-        });
-        let round1 = per_value(k, || {
-            publishers.iter().for_each(|p| p.put("1").wait().unwrap())
-        });
-        let round2 = per_value(k, || {
-            publishers.iter().for_each(|p| p.put("1").wait().unwrap())
-        });
-        // (b) One put carrying every entry (here plain "key=value" lines).
-        let aggregated = per_value(k, || {
-            let mut payload = String::with_capacity(k * 32);
-            for j in 0..k {
-                payload.push_str(&format!("demo/point/{j}=1\n"));
-            }
-            a.put("demo/points/@state", payload).wait().unwrap();
-        });
+        let undeclared = per_value(k, || put_undeclared(a, k));
+        // Round 1 runs right after the new declarations, round 2 again.
+        let round1 = per_value(k, || put_through(publishers));
+        let round2 = per_value(k, || put_through(publishers));
+        let aggregated = per_value(k, || put_aggregated(a, k));
         println!("{d:>7}  {undeclared:>11.2}  {round1:>11.2}  {round2:>11.2}  {aggregated:>11.3}");
-        rows.push((d, undeclared, round2, aggregated));
+        rows.push(Row {
+            d,
+            undeclared,
+            publisher: round2,
+            aggregated,
+        });
     }
+    rows
+}
 
-    let (first, last) = (rows[0], rows[rows.len() - 1]);
+/// Prints the verdict: whether both ways stay far below the undeclared put at the last D.
+fn report(rows: &[Row], k: usize) {
+    let (first, last) = (&rows[0], &rows[rows.len() - 1]);
     // (b)'s single put still matches its one key against every declaration, so its
     // per-entry figure grows with D too, but it is one put per sweep instead of K.
     let ms = |us: f64| us * k as f64 / 1000.0;
-    let ok = last.2 * 100.0 < last.1 && last.3 * 100.0 < last.1;
+    let ok = last.publisher * 100.0 < last.undeclared && last.aggregated * 100.0 < last.undeclared;
     println!(
         "{}: at D={} an undeclared put costs {:.2} us ({:.0} ms per sweep of {k}); \
          (a) a publisher put {:.2} us (at D={}: {:.2} us); \
          (b) the aggregated put {:.2} ms per sweep (at D={}: {:.2} ms)",
         if ok { "OK" } else { "NOT FIXED" },
-        last.0,
-        last.1,
-        ms(last.1),
-        last.2,
-        first.0,
-        first.2,
-        ms(last.3),
-        first.0,
-        ms(first.3),
+        last.d,
+        last.undeclared,
+        ms(last.undeclared),
+        last.publisher,
+        first.d,
+        first.publisher,
+        ms(last.aggregated),
+        first.d,
+        ms(first.aggregated),
     );
-    // Closing or dropping a session blocks for about 10 s, so exit right away.
-    std::process::exit(0);
 }
