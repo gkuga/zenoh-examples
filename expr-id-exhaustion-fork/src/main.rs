@@ -1,4 +1,4 @@
-//! ExprId exhaustion with the fork patch (gkuga/zenoh commit 25c6174e).
+//! ExprId exhaustion with the fork patch (gkuga/zenoh tag 1.8.0+gkuga.1).
 //!
 //! The same program as `expr-id-exhaustion`, built against zenoh 1.8.0 plus a fix:
 //! expression ids come from a wrapping cursor (amortized O(1)) instead of a linear

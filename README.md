@@ -10,7 +10,7 @@ The mechanisms behind each problem are explained in [docs](docs/README.md).
 | [peer-join-stall](peer-join-stall) | Repro | 1.8.0 | 1.8.0, 1.10.2 | When a **peer** joins a session that holds many declarations, the first reply never arrives, the other side's `put` stalls, and the link is closed every 5 seconds |
 | [client-join](client-join) | Fix | 1.8.0 | 1.8.0, 1.10.2 | Same setup, but the joining side is a **client**: replies come back in a few ms even with 40k queryables |
 | [expr-id-exhaustion](expr-id-exhaustion) | Repro | 1.8.0 | 1.8.0, 1.10.2 | Using up the u16 ExprIds (65 535) on one link makes declarations never return (release build) |
-| [expr-id-exhaustion-fork](expr-id-exhaustion-fork) | Fix (fork) | 1.8.0 + patch | 1.8.0 + patch | With a fork (gkuga/zenoh `25c6174`) via `[patch.crates-io]`, exhausting the ExprIds no longer hangs |
+| [expr-id-exhaustion-fork](expr-id-exhaustion-fork) | Fix (fork) | 1.8.0 + patch | 1.8.0 + patch | With the fork's tag `1.8.0+gkuga.1` (gkuga/zenoh) via `[patch.crates-io]`, exhausting the ExprIds no longer hangs |
 | [wildcard-querier-matching](wildcard-querier-matching) | Repro | 1.10.2 / 1.8.0 | 1.9.0 – 1.10.2 (not 1.8.0) | Since 1.9.0, `matching_status()` of a wildcard querier stays false (although `get` gets replies). `make compare` compares with 1.8.0 |
 | [wildcard-query-retry](wildcard-query-retry) | Fix | 1.10.2 | 1.10.2, 1.8.0 | Don't wait for matching: retry a `get` with a timeout, or query concrete keys |
 | [client-scouting](client-scouting) | Repro + fix | 1.8.0 | autoconnect: 1.8.0 only; `timeout_ms`: 1.8.0, 1.10.2 | A client does not connect to a **peer** it found by scouting (autoconnect), and fails immediately against an endpoint that is not listening yet (`connect/timeout_ms`) |

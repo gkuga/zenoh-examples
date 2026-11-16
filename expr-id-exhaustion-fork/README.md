@@ -2,16 +2,16 @@
 
 Runs [expr-id-exhaustion](../expr-id-exhaustion) with the fix from a fork (zenoh 1.8.0 + patch).
 
-**Confirmed on:** zenoh 1.8.0 with the fork patch (2026-11-15), macOS.
+**Confirmed on:** zenoh 1.8.0 with the fork patch, macOS: commit `25c6174e` (2026-11-15, the output below) and tag `1.8.0+gkuga.1` (2026-11-17, `OK` after 83.0 s), which has the same code.
 
 The program is the same as expr-id-exhaustion (only the port is `17542`). The only difference is these lines in Cargo.toml:
 
 ```toml
 [patch.crates-io]
-zenoh = { git = "https://github.com/gkuga/zenoh", rev = "25c6174e6477c355c4db6fd09e2044523fb73b37" }
+zenoh = { git = "https://github.com/gkuga/zenoh", tag = "1.8.0+gkuga.1" }
 ```
 
-The fix is commit `25c6174e6477c355c4db6fd09e2044523fb73b37`, which is 1.8.0 plus these two changes:
+The tag `1.8.0+gkuga.1` is commit `a574569c51a25ecec6ebe5d4059aff156296ec80` on the fork's `gkuga/1.8` branch. Its code is 1.8.0 plus these two changes (the fork's `PATCHES.md` lists them, with an ignored measurement test):
 
 - ExprIds are allocated by a wrapping cursor (amortized O(1); numbers freed by undeclare are reused first)
 - When every number is in use, the full key expression is sent without a number, with a warning logged once per face (`No expression id left, sending ... and later key expressions in full`)

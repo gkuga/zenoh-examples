@@ -46,7 +46,7 @@ Face exhaustion happens when declarations from several sessions (for example sev
 
 ## The fork's fix
 
-[gkuga/zenoh@25c6174](https://github.com/gkuga/zenoh/commit/25c6174e6477c355c4db6fd09e2044523fb73b37) is 1.8.0 plus two commits:
+The fork's tag `1.8.0+gkuga.1` ([`a574569`](https://github.com/gkuga/zenoh/commit/a574569c51a25ecec6ebe5d4059aff156296ec80), branch `gkuga/1.8`) is 1.8.0 plus two code commits, described in the fork's `PATCHES.md`:
 
 - **A wrapping cursor.** Numbers come from a cursor that skips 0, and numbers freed by the other side's undeclare are reused first. Candidates are still checked against both maps. Amortized O(1).
 - **Handling exhaustion.** When every number is in use, `decl_key` sends the full key expression without assigning a number. The face remembers that it is exhausted and does not search again. The warning is logged once per face (`No expression id left, sending ... and later key expressions in full`). An undeclare from the other side clears the flag.
@@ -55,7 +55,7 @@ The wire format does not change (`ExprId` stays u16). To use it, add this to Car
 
 ```toml
 [patch.crates-io]
-zenoh = { git = "https://github.com/gkuga/zenoh", rev = "25c6174e6477c355c4db6fd09e2044523fb73b37" }
+zenoh = { git = "https://github.com/gkuga/zenoh", tag = "1.8.0+gkuga.1" }
 ```
 
 zenoh depends on the other `zenoh-*` crates in its repository by path, so every `zenoh-*` in `Cargo.lock` comes from this commit.

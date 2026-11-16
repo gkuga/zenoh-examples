@@ -2306,7 +2306,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 [[package]]
 name = "zenoh"
 version = "1.8.0"
-source = "git+https://github.com/gkuga/zenoh?rev=25c6174e6477c355c4db6fd09e2044523fb73b37#25c6174e6477c355c4db6fd09e2044523fb73b37"
+source = "git+https://github.com/gkuga/zenoh?tag=1.8.0%2Bgkuga.1#a574569c51a25ecec6ebe5d4059aff156296ec80"
 dependencies = [
  "ahash",
  "arc-swap",
@@ -2356,7 +2356,7 @@ dependencies = [
 [[package]]
 name = "zenoh-buffers"
 version = "1.8.0"
-source = "git+https://github.com/gkuga/zenoh?rev=25c6174e6477c355c4db6fd09e2044523fb73b37#25c6174e6477c355c4db6fd09e2044523fb73b37"
+source = "git+https://github.com/gkuga/zenoh?tag=1.8.0%2Bgkuga.1#a574569c51a25ecec6ebe5d4059aff156296ec80"
 dependencies = [
  "zenoh-collections",
 ]
@@ -2364,7 +2364,7 @@ dependencies = [
 [[package]]
 name = "zenoh-codec"
 version = "1.8.0"
-source = "git+https://github.com/gkuga/zenoh?rev=25c6174e6477c355c4db6fd09e2044523fb73b37#25c6174e6477c355c4db6fd09e2044523fb73b37"
+source = "git+https://github.com/gkuga/zenoh?tag=1.8.0%2Bgkuga.1#a574569c51a25ecec6ebe5d4059aff156296ec80"
 dependencies = [
  "tracing",
  "uhlc",
@@ -2375,7 +2375,7 @@ dependencies = [
 [[package]]
 name = "zenoh-collections"
 version = "1.8.0"
-source = "git+https://github.com/gkuga/zenoh?rev=25c6174e6477c355c4db6fd09e2044523fb73b37#25c6174e6477c355c4db6fd09e2044523fb73b37"
+source = "git+https://github.com/gkuga/zenoh?tag=1.8.0%2Bgkuga.1#a574569c51a25ecec6ebe5d4059aff156296ec80"
 dependencies = [
  "ahash",
 ]
@@ -2383,7 +2383,7 @@ dependencies = [
 [[package]]
 name = "zenoh-config"
 version = "1.8.0"
-source = "git+https://github.com/gkuga/zenoh?rev=25c6174e6477c355c4db6fd09e2044523fb73b37#25c6174e6477c355c4db6fd09e2044523fb73b37"
+source = "git+https://github.com/gkuga/zenoh?tag=1.8.0%2Bgkuga.1#a574569c51a25ecec6ebe5d4059aff156296ec80"
 dependencies = [
  "json5",
  "nonempty-collections",
@@ -2407,7 +2407,7 @@ dependencies = [
 [[package]]
 name = "zenoh-core"
 version = "1.8.0"
-source = "git+https://github.com/gkuga/zenoh?rev=25c6174e6477c355c4db6fd09e2044523fb73b37#25c6174e6477c355c4db6fd09e2044523fb73b37"
+source = "git+https://github.com/gkuga/zenoh?tag=1.8.0%2Bgkuga.1#a574569c51a25ecec6ebe5d4059aff156296ec80"
 dependencies = [
  "lazy_static",
  "tokio",
@@ -2418,7 +2418,7 @@ dependencies = [
 [[package]]
 name = "zenoh-crypto"
 version = "1.8.0"
-source = "git+https://github.com/gkuga/zenoh?rev=25c6174e6477c355c4db6fd09e2044523fb73b37#25c6174e6477c355c4db6fd09e2044523fb73b37"
+source = "git+https://github.com/gkuga/zenoh?tag=1.8.0%2Bgkuga.1#a574569c51a25ecec6ebe5d4059aff156296ec80"
 dependencies = [
  "aes",
  "hmac",
@@ -2431,7 +2431,7 @@ dependencies = [
 [[package]]
 name = "zenoh-keyexpr"
 version = "1.8.0"
-source = "git+https://github.com/gkuga/zenoh?rev=25c6174e6477c355c4db6fd09e2044523fb73b37#25c6174e6477c355c4db6fd09e2044523fb73b37"
+source = "git+https://github.com/gkuga/zenoh?tag=1.8.0%2Bgkuga.1#a574569c51a25ecec6ebe5d4059aff156296ec80"
 dependencies = [
  "getrandom 0.2.17",
  "hashbrown 0.16.1",
@@ -2446,7 +2446,7 @@ dependencies = [
 [[package]]
 name = "zenoh-link"
 version = "1.8.0"
-source = "git+https://github.com/gkuga/zenoh?rev=25c6174e6477c355c4db6fd09e2044523fb73b37#25c6174e6477c355c4db6fd09e2044523fb73b37"
+source = "git+https://github.com/gkuga/zenoh?tag=1.8.0%2Bgkuga.1#a574569c51a25ecec6ebe5d4059aff156296ec80"
 dependencies = [
  "zenoh-config",
  "zenoh-link-commons",
@@ -2458,7 +2458,7 @@ dependencies = [
 [[package]]
 name = "zenoh-link-commons"
 version = "1.8.0"
-source = "git+https://github.com/gkuga/zenoh?rev=25c6174e6477c355c4db6fd09e2044523fb73b37#25c6174e6477c355c4db6fd09e2044523fb73b37"
+source = "git+https://github.com/gkuga/zenoh?tag=1.8.0%2Bgkuga.1#a574569c51a25ecec6ebe5d4059aff156296ec80"
 dependencies = [
  "async-trait",
  "flume",
@@ -2481,7 +2481,7 @@ dependencies = [
 [[package]]
 name = "zenoh-link-tcp"
 version = "1.8.0"
-source = "git+https://github.com/gkuga/zenoh?rev=25c6174e6477c355c4db6fd09e2044523fb73b37#25c6174e6477c355c4db6fd09e2044523fb73b37"
+source = "git+https://github.com/gkuga/zenoh?tag=1.8.0%2Bgkuga.1#a574569c51a25ecec6ebe5d4059aff156296ec80"
 dependencies = [
  "async-trait",
  "socket2 0.5.10",
@@ -2498,7 +2498,7 @@ dependencies = [
 [[package]]
 name = "zenoh-macros"
 version = "1.8.0"
-source = "git+https://github.com/gkuga/zenoh?rev=25c6174e6477c355c4db6fd09e2044523fb73b37#25c6174e6477c355c4db6fd09e2044523fb73b37"
+source = "git+https://github.com/gkuga/zenoh?tag=1.8.0%2Bgkuga.1#a574569c51a25ecec6ebe5d4059aff156296ec80"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2509,7 +2509,7 @@ dependencies = [
 [[package]]
 name = "zenoh-plugin-trait"
 version = "1.8.0"
-source = "git+https://github.com/gkuga/zenoh?rev=25c6174e6477c355c4db6fd09e2044523fb73b37#25c6174e6477c355c4db6fd09e2044523fb73b37"
+source = "git+https://github.com/gkuga/zenoh?tag=1.8.0%2Bgkuga.1#a574569c51a25ecec6ebe5d4059aff156296ec80"
 dependencies = [
  "git-version",
  "libloading",
@@ -2526,7 +2526,7 @@ dependencies = [
 [[package]]
 name = "zenoh-protocol"
 version = "1.8.0"
-source = "git+https://github.com/gkuga/zenoh?rev=25c6174e6477c355c4db6fd09e2044523fb73b37#25c6174e6477c355c4db6fd09e2044523fb73b37"
+source = "git+https://github.com/gkuga/zenoh?tag=1.8.0%2Bgkuga.1#a574569c51a25ecec6ebe5d4059aff156296ec80"
 dependencies = [
  "const_format",
  "rand",
@@ -2541,7 +2541,7 @@ dependencies = [
 [[package]]
 name = "zenoh-result"
 version = "1.8.0"
-source = "git+https://github.com/gkuga/zenoh?rev=25c6174e6477c355c4db6fd09e2044523fb73b37#25c6174e6477c355c4db6fd09e2044523fb73b37"
+source = "git+https://github.com/gkuga/zenoh?tag=1.8.0%2Bgkuga.1#a574569c51a25ecec6ebe5d4059aff156296ec80"
 dependencies = [
  "anyhow",
 ]
@@ -2549,7 +2549,7 @@ dependencies = [
 [[package]]
 name = "zenoh-runtime"
 version = "1.8.0"
-source = "git+https://github.com/gkuga/zenoh?rev=25c6174e6477c355c4db6fd09e2044523fb73b37#25c6174e6477c355c4db6fd09e2044523fb73b37"
+source = "git+https://github.com/gkuga/zenoh?tag=1.8.0%2Bgkuga.1#a574569c51a25ecec6ebe5d4059aff156296ec80"
 dependencies = [
  "lazy_static",
  "ron",
@@ -2563,7 +2563,7 @@ dependencies = [
 [[package]]
 name = "zenoh-sync"
 version = "1.8.0"
-source = "git+https://github.com/gkuga/zenoh?rev=25c6174e6477c355c4db6fd09e2044523fb73b37#25c6174e6477c355c4db6fd09e2044523fb73b37"
+source = "git+https://github.com/gkuga/zenoh?tag=1.8.0%2Bgkuga.1#a574569c51a25ecec6ebe5d4059aff156296ec80"
 dependencies = [
  "arc-swap",
  "event-listener",
@@ -2577,7 +2577,7 @@ dependencies = [
 [[package]]
 name = "zenoh-task"
 version = "1.8.0"
-source = "git+https://github.com/gkuga/zenoh?rev=25c6174e6477c355c4db6fd09e2044523fb73b37#25c6174e6477c355c4db6fd09e2044523fb73b37"
+source = "git+https://github.com/gkuga/zenoh?tag=1.8.0%2Bgkuga.1#a574569c51a25ecec6ebe5d4059aff156296ec80"
 dependencies = [
  "futures",
  "tokio",
@@ -2590,7 +2590,7 @@ dependencies = [
 [[package]]
 name = "zenoh-transport"
 version = "1.8.0"
-source = "git+https://github.com/gkuga/zenoh?rev=25c6174e6477c355c4db6fd09e2044523fb73b37#25c6174e6477c355c4db6fd09e2044523fb73b37"
+source = "git+https://github.com/gkuga/zenoh?tag=1.8.0%2Bgkuga.1#a574569c51a25ecec6ebe5d4059aff156296ec80"
 dependencies = [
  "async-trait",
  "crossbeam-utils",
@@ -2622,7 +2622,7 @@ dependencies = [
 [[package]]
 name = "zenoh-util"
 version = "1.8.0"
-source = "git+https://github.com/gkuga/zenoh?rev=25c6174e6477c355c4db6fd09e2044523fb73b37#25c6174e6477c355c4db6fd09e2044523fb73b37"
+source = "git+https://github.com/gkuga/zenoh?tag=1.8.0%2Bgkuga.1#a574569c51a25ecec6ebe5d4059aff156296ec80"
 dependencies = [
  "async-trait",
  "const_format",
