@@ -25,6 +25,10 @@ The mechanisms behind each problem are explained in [docs](docs/README.md).
 - Some samples measure time, so `make run` is `cargo run --release`. The first build takes 1–2 minutes.
 - Measurements were taken on 2026-11-15 on macOS (Apple M3 Pro, 11 cores, Rust 1.96.0).
 
+## Upstream
+
+Nothing from this repository is sent to upstream (`eclipse-zenoh/zenoh`): no issues, PRs or comments. Problems found here are tracked in this repository and in the fork `gkuga/zenoh`. The rules that keep it that way, for people and agents, are in [AGENTS.md](AGENTS.md).
+
 ## Background
 
 An edge application declared a Zenoh queryable and subscribers for every measurement point, and the daemon hung once it reached a few thousand points. The problems found while investigating that are extracted here.
