@@ -67,7 +67,7 @@ fn declare(session: &zenoh::Session, from: usize, to: usize) {
     }
 }
 
-/// Adds declarations on A and B for keys `from..to`, and gives B's time to reach A.
+/// Adds declarations for keys `from..to` on A and on B, then lets B's reach A.
 async fn declare_both(a: &zenoh::Session, b: &zenoh::Session, from: usize, to: usize) {
     declare(a, from, to);
     declare(b, from, to);

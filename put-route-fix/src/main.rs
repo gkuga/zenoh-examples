@@ -68,7 +68,7 @@ fn declare(session: &zenoh::Session, from: usize, to: usize) {
     }
 }
 
-/// Adds declarations on A and B for keys `from..to`, and gives B's time to reach A.
+/// Adds declarations for keys `from..to` on A and on B, then lets B's reach A.
 async fn declare_both(a: &zenoh::Session, b: &zenoh::Session, from: usize, to: usize) {
     declare(a, from, to);
     declare(b, from, to);
@@ -93,7 +93,7 @@ fn put_undeclared(session: &zenoh::Session, k: usize) {
 }
 
 /// (a) One put through each publisher.
-fn put_through(publishers: &[Publisher]) {
+fn put_through(publishers: &[Publisher<'_>]) {
     publishers.iter().for_each(|p| p.put("1").wait().unwrap())
 }
 

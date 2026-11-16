@@ -56,7 +56,7 @@ async fn declare_queryables(session: &zenoh::Session) -> Vec<Queryable<()>> {
 struct Probe {
     /// What `matching_listener` reported within 1 s, if anything.
     event: Option<bool>,
-    /// `matching_status()`, read after the listener's second.
+    /// `matching_status()`, read after the listener has had its 1 s.
     status: bool,
     /// How many replies its `get` received.
     replies: usize,
