@@ -1,6 +1,6 @@
 # ExprId exhaustion
 
-Samples: [expr-id-exhaustion](../expr-id-exhaustion) (repro), [expr-id-exhaustion-fork](../expr-id-exhaustion-fork) (fix in a fork)
+Sample: [expr-id-exhaustion](../expr-id-exhaustion) (repro)
 
 ## What an ExprId is
 
@@ -44,20 +44,13 @@ Declaring 70 000 queryables from one session (2026-11-15, release):
 So declaring 65 536 or more queryables from one session does not hang, but silently breaks.
 Face exhaustion happens when declarations from several sessions (for example several clients connected to a router or a peer) are funneled into one link. Liveliness tokens do not declare a prefix and are sent with the full key (`declare_liveliness_inner`), so they reproduce it from a single session.
 
-## The fork's fix
+## A fix
 
-The fork's tag `1.8.0+gkuga.1` ([`a574569`](https://github.com/gkuga/zenoh/commit/a574569c51a25ecec6ebe5d4059aff156296ec80), branch `gkuga/1.8`) is 1.8.0 plus two code commits, described in the fork's `PATCHES.md`:
+A fix on top of 1.8.0 changes two things:
 
 - **A wrapping cursor.** Numbers come from a cursor that skips 0, and numbers freed by the other side's undeclare are reused first. Candidates are still checked against both maps. Amortized O(1).
 - **Handling exhaustion.** When every number is in use, `decl_key` sends the full key expression without assigning a number. The face remembers that it is exhausted and does not search again. The warning is logged once per face (`No expression id left, sending ... and later key expressions in full`). An undeclare from the other side clears the flag.
 
-The wire format does not change (`ExprId` stays u16). To use it, add this to Cargo.toml:
+The wire format does not change (`ExprId` stays u16).
 
-```toml
-[patch.crates-io]
-zenoh = { git = "https://github.com/gkuga/zenoh", tag = "1.8.0+gkuga.1" }
-```
-
-zenoh depends on the other `zenoh-*` crates in its repository by path, so every `zenoh-*` in `Cargo.lock` comes from this commit.
-
-This fix keeps a node from hanging on exhaustion; the push under the lock from [01](01-peer-join-declarations.md) remains. Measured on the fork side (control queue 16), the time for a peer joining a session with N declarations to get its first reply went from 4.55 s to 3.17 s at 10k and from 33.1 s to 26.2 s at 20k.
+This fix keeps a node from hanging on exhaustion; the push under the lock from [01](01-peer-join-declarations.md) remains. Measured with that fix (control queue 16), the time for a peer joining a session with N declarations to get its first reply went from 4.55 s to 3.17 s at 10k and from 33.1 s to 26.2 s at 20k.

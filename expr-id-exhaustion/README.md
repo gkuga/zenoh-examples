@@ -7,11 +7,11 @@ A repro of a session's declarations never returning once the u16 ExprIds of one 
 - Peer B (the parent process) first connects to session A (a child process) on `tcp/127.0.0.1:17541` (no multicast scouting).
 - A then declares N = 70 000 liveliness tokens on distinct keys `demo/token/{i}`. Each declaration uses one ExprId on the face towards B.
 - A watchdog thread in A reports any declaration that has not returned for 10 s or more. If one has not returned for 30 s, the parent prints `REPRODUCED`, kills the child and exits (overall limit 600 s).
-- If all declarations return, it checks whether B can see the last token `demo/token/69999` with a liveliness `get` (used by the fork version).
+- If all declarations return, it checks whether B can see the last token `demo/token/69999` with a liveliness `get`.
 
 Declarations happen after the join, so the full push at join time from [peer-join-stall](../peer-join-stall) does not occur. Declarations are sent to B one by one.
 
-See [docs/02](../docs/02-expr-id-exhaustion.md) for the mechanism and for why tokens are used instead of queryables (with queryables the session-side counter wraps first, and things silently break instead of hanging). The fix is in [expr-id-exhaustion-fork](../expr-id-exhaustion-fork).
+See [docs/02](../docs/02-expr-id-exhaustion.md) for the mechanism and for why tokens are used instead of queryables (with queryables the session-side counter wraps first, and things silently break instead of hanging). A fix is described there.
 
 ## Run
 

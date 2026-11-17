@@ -6,7 +6,7 @@ Source locations refer to each version as fetched from crates.io (for example `~
 ## Contents
 
 1. [Peer join and the full push of declarations](01-peer-join-declarations.md) — peer-join-stall / client-join. In p2p, all declarations are sent to a joining peer while holding the write lock. A client only receives declarations matching its interests
-2. [ExprId exhaustion](02-expr-id-exhaustion.md) — expr-id-exhaustion / expr-id-exhaustion-fork. Linear search in `get_next_local_id`, the u16 limit, the wraparound of the session-side counter, and the fork's fix
+2. [ExprId exhaustion](02-expr-id-exhaustion.md) — expr-id-exhaustion. Linear search in `get_next_local_id`, the u16 limit, the wraparound of the session-side counter, and a fix
 3. [Wildcard querier matching](03-wildcard-querier-matching.md) — wildcard-querier-matching / wildcard-query-retry. Since 1.9.0, `remote_queryable_matching_status` requires inclusion
 4. [Client, scouting and connect](04-client-scouting.md) — client-scouting. The client defaults of `scouting/multicast/autoconnect` and `connect/timeout_ms`
 5. [Cost of a put to an undeclared key](05-put-route-cost.md) — put-route-cost / put-route-fix. A key without a resource has no cached route, so `Resource::get_matches` runs on every put

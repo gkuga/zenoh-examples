@@ -1,19 +1,18 @@
 # Rules for agents working in this repository
 
 This repository, `gkuga/zenoh-examples`, reproduces problems in Eclipse Zenoh (`eclipse-zenoh/zenoh`,
-"upstream") and shows fixes, some of them from the fork `gkuga/zenoh`. Read these rules before running
-any `git` or `gh` command, and follow them in every session.
+"upstream") and shows workarounds and fixes. Read these rules before running any `git` or `gh` command,
+and follow them in every session.
 
 ## 1. Nothing reaches upstream
 
-Nothing done here, or in `gkuga/zenoh`, may reach upstream or the people who work on it. No issue, PR,
-comment, mention, reaction or notification, of any kind.
+Nothing done here may reach upstream or the people who work on it. No issue, PR, comment, mention,
+reaction or notification, of any kind.
 
 - **Do not act on upstream.** Do not open, comment on, review, react to, label, close or edit anything in
   `eclipse-zenoh/*`. Reading upstream (`gh api`, web pages, crates.io sources) is allowed.
-- **Name the repository.** Every `gh` command that writes takes `--repo`, either
-  `--repo gkuga/zenoh-examples` or `--repo gkuga/zenoh`. `gkuga/zenoh` is registered as a fork of
-  upstream, so a plain `gh pr create` there opens the PR **on upstream**.
+- **Name the repository.** Every `gh` command that writes takes `--repo gkuga/zenoh-examples`. In a
+  clone of a fork, a plain `gh pr create` opens the PR **on the parent repository**.
 - **No cross-references.** GitHub links, and notifies, any reference it finds in issue and PR titles and
   bodies, comments, review comments, commit messages, tag messages and release notes. In all of these:
   - do not write `eclipse-zenoh/zenoh#123`, `eclipse-zenoh/zenoh@abc1234`, or `owner/repo#N` /
