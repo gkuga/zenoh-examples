@@ -1,0 +1,14 @@
+[package]
+name = "peer-join-remote"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+# `make build-variant` replaces this line with a git dependency on a patched tree
+# in a copy of the project; see the README.
+zenoh = { version = "=1.10.2", default-features = false, features = ["transport_tcp"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "signal"] }
+
+# Standalone project: each sample pins its own zenoh version.
+[workspace]
