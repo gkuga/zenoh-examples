@@ -8,6 +8,7 @@ The mechanisms behind each problem are explained in [docs](docs/README.md).
 | Directory | Kind | zenoh | Confirmed on | What it shows |
 | --- | --- | --- | --- | --- |
 | [peer-join-stall](peer-join-stall) | Repro | 1.8.0 | 1.8.0, 1.10.2 | When a **peer** joins a session that holds many declarations, the first reply never arrives, the other side's `put` stalls, and the link is closed every 5 seconds |
+| [peer-join-remote](peer-join-remote) | Measurement | 1.10.2 | 1.10.2 (with patches) | Same setup across two hosts: a histogram of how long the other side's `put` waits while a **peer** joins (run with `make serve` / `make join`, not `make run`) |
 | [client-join](client-join) | Fix | 1.8.0 | 1.8.0, 1.10.2 | Same setup, but the joining side is a **client**: replies come back in a few ms even with 40k queryables |
 | [expr-id-exhaustion](expr-id-exhaustion) | Repro | 1.8.0 | 1.8.0, 1.10.2 | Using up the u16 ExprIds (65 535) on one link makes declarations never return (release build) |
 | [wildcard-querier-matching](wildcard-querier-matching) | Repro | 1.10.2 / 1.8.0 | 1.9.0 – 1.10.2 (not 1.8.0) | Since 1.9.0, `matching_status()` of a wildcard querier stays false (although `get` gets replies). `make compare` compares with 1.8.0 |
